@@ -1,0 +1,468 @@
+TRAP & TONIC / SIM-002B EXACT PINNED SOURCE / GATE E: TEST HARNESS & CONTINUOUS INTEGRATION
+Candidate: 6722ac6edd8ed37633db56804517c859a58829df
+Base: c45f33e143f71acd7a66edacf773161fb4b9416f
+PR #4 https://github.com/anil-ganti-nbc/dungeon-capitalism-simulator/pull/4
+This contains ORIGINAL UTF-8 GitHub test files from pinned commit. Builder-authored tests; do not treat as independent execution.
+
+==== BEGIN FILE scripts/foundation.test.ts BLOB 573cf99d1e5868f5f8f076afb60a97cdcaa55902 ====
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import { createInitialSaveState, validateSavePayload, normalizeLoadedSave, loadGameWithRecovery,
+  persistAtomicSaveSafe, SAVE_STORAGE_KEY, SAVE_BACKUP_KEY, HISTORICAL_V2_BACKUP_KEY, QUARANTINE_KEY } from '../src/engine/saveManager';
+import { createBaselineState, runSingleCampaign, StrategyId } from '../src/engine/campaignRunner';
+import { computeQuotation, executeCommercialTransaction, resolveConsumableWear } from '../src/engine/economyEngine';
+import { getDailyMarketContext } from '../src/engine/marketContext';
+import { assembleTrapProduct, isTrapTriggeredByMass, simulateRegionExpedition, generatePeerCatalystCode, verifyAndParseCatalystCode } from '../src/engine/simulation';
+import { TRAP_PARTS_CATALOG } from '../src/data/catalog';
+import { claimSoloCatalyst } from '../src/engine/progression';
+
+const terms = { priceMultiplier:1, warrantyBacked:false, exclusiveDeal:false, secretProvenance:false };
+const strategies: StrategyId[] = ['BALANCED_MERCHANT','DUNGEON_LOYALIST','HERO_BENEFACTOR','ALCHEMICAL_INDUSTRIALIST','PREDATORY_CAPITALIST'];
+class MemoryStorage {
+  data = new Map<string,string>(); failAt = -1; writes = 0;
+  getItem(k:string) { return this.data.get(k) ?? null; }
+  setItem(k:string,v:string) { if (++this.writes === this.failAt) throw Error('interruption'); this.data.set(k,v); }
+  removeItem(k:string) { this.data.delete(k); }
+}
+const fixture = (name:string) => fs.readFileSync(new URL(`./fixtures/${name}`,import.meta.url),'utf8').replace(/^\uFEFF/,'');
+test('one independent fresh factory, no shared mutable arrays, all references resolve', () => {
+  const a = createInitialSaveState(123), b = createBaselineState(123);
+  assert.deepEqual(a,b); assert.equal(validateSavePayload(JSON.stringify(a)).valid,true);
+  a.parties[0].members[0].massKg=1; assert.notDeepEqual(a,b);
+  assert.equal(createInitialSaveState(123).parties[0].members[0].massKg,b.parties[0].members[0].massKg);
+});
+test('market stream persists through reload and ignores unrelated RNG/caller factor', () => {
+  const s=createInitialSaveState(); const m=getDailyMarketContext(s.seed,s.day,s.activeRegion);
+  assert.deepEqual(m,getDailyMarketContext(s.seed,s.day,s.activeRegion));
+  assert.notDeepEqual(m,getDailyMarketContext(s.seed,s.day+1,s.activeRegion));
+  const p=s.products.find(p=>p.targetAudience==='HERO')!, buyer=s.parties[0];
+  const q=computeQuotation(p,buyer,'HERO',{...terms,seed:s.seed,day:s.day});
+  const tx=executeCommercialTransaction(normalizeLoadedSave(s),'HERO',buyer.id,p,{...terms,marketSentiment:99} as any);
+  assert.equal(tx.unitPrice,q.unitPrice); assert.deepEqual(tx.contract?.marketContext,m);
+});
+test('60 populated runner traces replay before daily clearing, including quote and full state', () => {
+  let events=0;
+  for(const strategy of strategies) for(let n=1;n<=12;n++) {
+    let populated=0;
+    runSingleCampaign(20260000+n,strategy,1,false,e=>{
+      events++; populated++;
+      const copy=structuredClone(e.before), p=copy.products.find(p=>p.id===e.productId)!;
+      const buyer=(e.buyerType==='MASTER'?copy.masters:copy.parties).find(b=>b.id===e.buyerId)!;
+      const q=computeQuotation(p,buyer,e.buyerType,{...e.terms,seed:copy.seed,day:copy.day,rulesVersion:copy.rulesVersion,unlockedSkills:copy.skills.filter(s=>s.unlocked).map(s=>s.effectKey)});
+      const actual=executeCommercialTransaction(copy,e.buyerType,e.buyerId,p,e.terms);
+      assert.deepEqual(actual,e.result);
+      if(actual.success) { assert.equal(q.unitPrice,actual.unitPrice); assert(actual.nextState!.contractsToday.length>0); }
+      assert.deepEqual(copy,e.before,'command mutates input');
+    });
+    assert(populated>0,`${strategy}/${n} had no actions`);
+  }
+  assert(events>=60);
+});
+test('actual v1 and historical Day5 v2 preserve progress; old backup recovers corrupt primary',()=>{
+  for(const name of ['legacy-v1.json','historical-v2-day5.json']) {
+    const raw=fixture(name), old=JSON.parse(raw), check=validateSavePayload(raw);
+    assert.equal(check.valid,true,check.error); const next=check.state!;
+    for(const key of ['day','gold','debt','contractHistory','financialLedger','catalystLedger','expertUnlocked','reagentInventory','partInventory'] as const) assert.deepEqual(next[key],old[key]);
+    assert.deepEqual(next.products.filter(p=>old.products.some((o:any)=>o.id===p.id)),old.products);
+    const st=new MemoryStorage();st.setItem(SAVE_STORAGE_KEY,'{broken');st.setItem(HISTORICAL_V2_BACKUP_KEY,raw);
+    const loaded=loadGameWithRecovery(st as any);
+    assert.equal(loaded.source,'HISTORICAL_V2_BACKUP');assert.equal(loaded.state.day,old.day);assert(loaded.notice?.includes(`Day ${old.day}`));
+    assert.equal(st.getItem(HISTORICAL_V2_BACKUP_KEY),raw); assert.equal(st.getItem(QUARANTINE_KEY),'{broken');
+    assert([...st.data.keys()].some(k=>k.startsWith('trap_and_tonic_pre_migration:')));
+  }
+});
+test('nested corruption rejects atomically; healthy checkpoints survive interrupted writes',()=>{
+  const good=createInitialSaveState();
+  for(const damage of [(s:any)=>s.parties[0].members[0]=null,(s:any)=>delete s.parties[0].members[0].massKg,
+    (s:any)=>delete s.products[0].counterClasses,(s:any)=>s.scheduledMatchups.cellar.partyId='missing',
+    (s:any)=>s.products[0].stock=-1,(s:any)=>s.version='99',(s:any)=>s.skills[0].costPoints=0,(s:any)=>s.debt=Infinity]) {
+    const bad=structuredClone(good);damage(bad); const st=new MemoryStorage();
+    st.setItem(SAVE_STORAGE_KEY,JSON.stringify(bad));st.setItem(SAVE_BACKUP_KEY,JSON.stringify(good));
+    assert.equal(validateSavePayload(JSON.stringify(bad)).valid,false);
+    assert.equal(persistAtomicSaveSafe(bad,st as any),false);assert.equal(st.getItem(SAVE_BACKUP_KEY),JSON.stringify(good));
+    assert.equal(loadGameWithRecovery(st as any).source,'BACKUP');
+  }
+  for(const failAt of [1,2]) {
+    const st=new MemoryStorage();st.data.set(SAVE_STORAGE_KEY,JSON.stringify(good));st.failAt=failAt;
+    assert.equal(persistAtomicSaveSafe({...good,gold:1000},st as any),false);
+    assert.equal(loadGameWithRecovery(st as any).state.gold,good.gold);
+  }
+  const st=new MemoryStorage();st.setItem(SAVE_STORAGE_KEY,'bad');assert.equal(loadGameWithRecovery(st as any).writeBlocked,true);assert.equal(st.getItem(SAVE_STORAGE_KEY),'bad');
+});
+test('fifth dose and fourth installation rejected with zero mutation; repeated doses conserved',()=>{
+  for(const kind of ['MASTER','HERO'] as const) {
+    let s=createInitialSaveState(); const buyer=(kind==='MASTER'?s.masters:s.parties)[0];buyer.budget=99999;
+    if(kind==='MASTER') s.masters[0].installedHazards=[];else s.parties[0].equippedProducts=[];
+    const p=s.products.find(p=>p.targetAudience===kind)!;p.stock=10;
+    const cap=kind==='MASTER'?3:4;
+    for(let i=0;i<cap;i++) { const r=executeCommercialTransaction(s,kind,buyer.id,p,terms);assert(r.success,r.reason);s=r.nextState!; }
+    const before=structuredClone(s), r=executeCommercialTransaction(s,kind,buyer.id,p,terms);
+    assert.equal(r.success,false);assert.match(r.reason!,/full/);assert.deepEqual(s,before);assert.equal(s.contractHistory.length,cap);
+    assert.equal(s.products.find(q=>q.id===p.id)!.stock,10-cap);
+  }
+});
+test('wrong audience, stale/empty stock, unlocked other region and locked current region are atomic refusals',()=>{
+  const s=createInitialSaveState();s.unlockedRegions.push('warrens'); const hero=s.products.find(p=>p.targetAudience==='HERO')!;
+  for(const [kind,buyer,prod] of [['MASTER',s.masters[0].id,hero],['HERO',s.parties.find(p=>p.region==='warrens')!.id,hero],['HERO',s.parties[0].id,{...hero,id:'stale'}]] as const) {
+    const before=structuredClone(s);assert.equal(executeCommercialTransaction(s,kind,buyer,prod,terms).success,false);assert.deepEqual(s,before);
+  }
+  hero.stock=0; assert.equal(executeCommercialTransaction(s,'HERO',s.parties[0].id,{...hero,stock:100},terms).success,false);
+});
+test('10 raids without purchases produce zero paid equipment, duplicate potions deplete individually',()=>{
+  const s=createInitialSaveState(), p=s.parties[0],m=s.masters[0]; p.equippedProducts=[s.products[0].id,s.products[0].id];m.installedHazards=[];
+  for(let d=1;d<=10;d++){const w=resolveConsumableWear(p,m,0,d,[]);p.equippedProducts=w.nextEquipped;m.installedHazards=w.nextInstalled;assert.equal(p.equippedProducts.length,Math.max(0,2-d));assert.equal(m.installedHazards.length,0);}
+});
+test('five actual runner policies, 50 no-purchase raids, zero phantom grants',()=>{
+  for(const strategy of strategies) {
+    const initial=createInitialSaveState();let last=initial;
+    runSingleCampaign(initial.seed,strategy,10,false,undefined,{tradeEnabled:false,onAfterRaid:s=>{
+      assert.equal(s.contractHistory.length,0);
+      for(const m of s.masters) assert(m.installedHazards.length<=last.masters.find(p=>p.id===m.id)!.installedHazards.length);
+      for(const p of s.parties) assert(p.equippedProducts.length<=last.parties.find(o=>o.id===p.id)!.equippedProducts.length);
+      last=s;
+    }});
+    assert.equal(last.day,10);
+  }
+});
+test('shared inversion predicate at 19/21/25/86kg and one paid persistent temporal rewind',()=>{
+  const ids=['part_trg_12','part_con_01','part_del_01','part_pay_01','part_pow_01','part_rst_09'];
+  const trap=assembleTrapProduct(ids.map(id=>TRAP_PARTS_CATALOG.find(p=>p.id===id)!) as any,'Temporal test',false);
+  let s=createInitialSaveState();s.products.push(trap);s.masters[0].installedHazards=[];s.masters[0].installedResetCharges=[];s.masters[0].budget=99999;
+  const tx=executeCommercialTransaction(s,'MASTER',s.masters[0].id,trap,terms);assert(tx.success,tx.reason);s=tx.nextState!;
+  for(const mass of [19,21,25,86]) {
+    assert.equal(isTrapTriggeredByMass(trap,mass),mass<25);
+    const m={...s.masters[0],installedHazards:[trap.id]},p=structuredClone(s.parties[0]);p.equippedProducts=[];p.members[0].massKg=mass;
+    const report=simulateRegionExpedition(3,s.seed,m,p,s.products,[]);
+    assert.equal(report.rooms[0].outcome,mass<25?'TRAP_TRIGGERED':'TRAP_BYPASSED');
+  }
+  const m=s.masters[0];assert.deepEqual(m.installedResetCharges,[1]);
+  const first=resolveConsumableWear(s.parties[0],m,0,3,[]);assert.equal(first.rewindsSpent,1);assert.deepEqual(first.nextInstalled,[trap.id]);
+  m.installedHazards=first.nextInstalled;m.installedResetCharges=first.nextResetCharges;
+  s=normalizeLoadedSave(s);assert.deepEqual(s.masters[0].installedResetCharges,[0]);
+  const second=resolveConsumableWear(s.parties[0],s.masters[0],0,6,[]);assert.deepEqual(second.nextInstalled,[]);assert.deepEqual(second.nextResetCharges,[]);
+});
+test('community checksum is never authentic and cannot grant Expert, solo command requires actual bilateral work',()=>{
+  const s=createInitialSaveState();s.unlockedRegions.push('warrens','blackspire');
+  const c=verifyAndParseCatalystCode(generatePeerCatalystCode('MERCHANT',9),9,[],s.unlockedRegions);
+  assert(c.valid);assert.equal(c.entry!.isAuthentic,false);assert.equal(claimSoloCatalyst(s),s);
+  for(const strategy of ['DUNGEON_LOYALIST','HERO_BENEFACTOR'] as StrategyId[]) {
+    const r=runSingleCampaign(20260001,strategy,120);assert.equal(r.finalState.expertUnlocked,false,'specialist peer bypass must not unlock Expert');
+  }
+});
+
+==== END FILE scripts/foundation.test.ts ====
+
+==== BEGIN FILE scripts/browser_foundation.ts BLOB 1659d31254c2885fccafa7fd2a7854a2f82d743f ====
+import fs from 'node:fs';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+import { chromium, BrowserContext, Page } from 'playwright';
+import { createInitialSaveState, normalizeLoadedSave, SAVE_STORAGE_KEY, HISTORICAL_V2_BACKUP_KEY } from '../src/engine/saveManager';
+import { assembleTrapProduct } from '../src/engine/simulation';
+import { TRAP_PARTS_CATALOG } from '../src/data/catalog';
+
+const out=process.env.EVIDENCE_DIR ?? 'artifacts/sim002b';fs.mkdirSync(out,{recursive:true});
+const url=process.env.TEST_URL ?? 'http://127.0.0.1:4178';
+const executablePath=process.env.BROWSER_PATH || undefined;
+const browser=await chromium.launch({headless:true,executablePath});
+const evidence:any[]=[];const errors:any[]=[];
+async function boot(name:string,keys:Record<string,string>={},mobile?:{width:number;height:number}) {
+  const c=await browser.newContext({viewport:mobile??{width:1440,height:1000},isMobile:!!mobile,hasTouch:!!mobile});
+  await c.addInitScript(data=>{if(!sessionStorage.getItem('__boot')){for(const [k,v] of Object.entries(data))localStorage.setItem(k,v);sessionStorage.setItem('__boot','1');}},keys);
+  const p=await c.newPage();p.on('pageerror',e=>errors.push({name,error:e.message}));p.on('console',m=>{if(m.type()==='error')evidence.push({name,console:m.text()});});
+  await p.goto(url);const open=p.getByRole('button',{name:/^(Open Merchant Ledger|Continue Ledger)/});if(mobile)await open.tap();else await open.click();
+  await p.waitForTimeout(80);return {c,p};
+}
+const state=(p:Page)=>p.evaluate(()=>JSON.parse(localStorage.getItem('trap_and_tonic_save_v2')!));
+async function shot(p:Page,name:string){await p.screenshot({path:path.join(out,name+'.png')});}
+async function tab(p:Page,name:string,mobile=false){const b=p.getByRole('button',{name,exact:true});if(mobile)await b.tap();else await b.click();}
+async function raid(p:Page){const before=await state(p);await p.getByRole('button',{name:/^Run Scheduled Expedition/}).click();await p.waitForTimeout(60);const after=await state(p);assert.equal(after.day,before.day+1);return {before,after};}
+try {
+  // Historical recovery uses the original Day5 export, not a synthetic fresh save.
+  const raw=fs.readFileSync(new URL('./fixtures/historical-v2-day5.json',import.meta.url),'utf8').replace(/^\uFEFF/,'');
+  const r=await boot('historical-recovery',{[SAVE_STORAGE_KEY]:'{corrupt',[HISTORICAL_V2_BACKUP_KEY]:raw});
+  const restored=await state(r.p);assert.equal(restored.day,JSON.parse(raw).day);assert.equal(restored.gold,JSON.parse(raw).gold);
+  assert.match(await r.p.getByRole('alert').innerText(),/trap_and_tonic_backup_v2.*Day 5/);
+  await tab(r.p,'Clients');await shot(r.p,'historical-recovery-clients');
+  evidence.push({name:'historical-recovery',expected:normalizeLoadedSave(JSON.parse(raw)),actual:restored,storage:await r.p.evaluate(()=>({...localStorage}))});
+  await tab(r.p,'Catalyst & Audit');await r.p.getByRole('button',{name:'Paradox Catalyst Gate & Save Ledger',exact:true}).click();
+  const bad=structuredClone(restored);bad.parties[0].members[0]=null;
+  await r.p.locator('textarea').fill(JSON.stringify(bad));
+  await r.p.getByRole('button',{name:/Import Save JSON/}).click();
+  assert.deepEqual(await state(r.p),restored);await tab(r.p,'Clients');await shot(r.p,'corrupt-import-refused');
+  await r.p.reload();await r.p.getByRole('button',{name:/^Continue Ledger/}).click();await tab(r.p,'Clients');assert.deepEqual(await state(r.p),restored);await r.c.close();
+
+  // No sales: actual UI day advancement, no loadout mutation beyond normal wear.
+  const s=createInitialSaveState();for(const m of s.masters){m.installedHazards=[];m.installedResetCharges=[];}for(const p of s.parties)p.equippedProducts=[];
+  const n=await boot('ten-no-purchase-raids',{[SAVE_STORAGE_KEY]:JSON.stringify(s)});const raids=[];
+  for(let d=0;d<10;d++){const row=await raid(n.p);for(const m of row.after.masters)assert.deepEqual(m.installedHazards,[]);for(const p of row.after.parties)assert.deepEqual(p.equippedProducts,[]);raids.push(row);}
+  evidence.push({name:'ten-no-purchase-raids',raids});await shot(n.p,'ten-no-purchase-raids');await n.c.close();
+
+  // Fifth paid dose cannot silently evict an unused unit.
+  const cap=createInitialSaveState();cap.parties[0].equippedProducts=[];cap.parties[0].budget=10000;cap.products[0].stock=6;
+  const f=await boot('five-dose-capacity',{[SAVE_STORAGE_KEY]:JSON.stringify(cap)});const prod=cap.products[0];
+  const card=f.p.getByText(prod.name+' [#'+prod.formulaSignature+']',{exact:true}).locator('../..');
+  for(let i=0;i<4;i++){await card.getByRole('button').click();await f.p.waitForTimeout(30);}
+  const four=await state(f.p);assert.equal(four.parties[0].equippedProducts.length,4);assert.equal(four.contractHistory.length,4);
+  assert.equal(await card.getByRole('button').isEnabled(),false);assert.match(await card.innerText(),/Loadout full/);await f.p.reload();await f.p.getByRole('button',{name:/^Continue Ledger/}).click();assert.deepEqual(await state(f.p),four);
+  evidence.push({name:'five-dose-capacity',before:cap,after:four});await shot(f.p,'fifth-dose-refused');await f.c.close();
+
+  // One finite reset, then exhaustion, across real UI raids and a reload.
+  const temp=createInitialSaveState();temp.day=3;temp.masters[0].installedHazards=[];temp.masters[0].installedResetCharges=[];temp.masters[0].budget=99999;temp.parties[0].equippedProducts=[];temp.parties[0].members[0].massKg=21;
+  const trap=assembleTrapProduct(['part_trg_12','part_con_01','part_del_01','part_pay_01','part_pow_01','part_rst_09'].map(id=>TRAP_PARTS_CATALOG.find(p=>p.id===id)!) as any,'Temporal diagnostic',false);temp.products.push(trap);
+  const tr=await boot('temporal-resource',{[SAVE_STORAGE_KEY]:JSON.stringify(temp)});
+  await tr.p.getByText(trap.name+' [#'+trap.formulaSignature+']',{exact:true}).locator('../..').getByRole('button').click();
+  const paid=await state(tr.p);assert.deepEqual(paid.masters[0].installedResetCharges,[1]);const resetRaids=[];
+  for(let d=3;d<=6;d++){
+    await tab(tr.p,'Bilateral Desk');await tr.p.getByRole('combobox',{name:'Scheduled Dungeon Master'}).selectOption(temp.masters[0].id);await tr.p.getByRole('combobox',{name:'Scheduled Adventuring Party'}).selectOption(temp.parties[0].id);
+    resetRaids.push(await raid(tr.p));
+    if(d===3){const a=await state(tr.p);assert.deepEqual(a.masters[0].installedResetCharges,[0]);assert.deepEqual(a.masters[0].installedHazards,[trap.id]);assert.equal(a.expeditionReports[0].rooms[0].outcome,'TRAP_TRIGGERED');await tr.p.reload();await tr.p.getByRole('button',{name:/^Continue Ledger/}).click();assert.deepEqual(await state(tr.p),a);}
+  }
+  assert.deepEqual((await state(tr.p)).masters[0].installedHazards,[]);evidence.push({name:'temporal-resource',paid,raids:resetRaids});await shot(tr.p,'temporal-charge-exhausted');await tr.c.close();
+
+  // Android-sized emulation, genuine CDP touch events; no physical keyboard.
+  for(const viewport of [{width:375,height:812},{width:412,height:915}]){
+    const name=`touch-${viewport.width}`;const {c,p}=await boot(name,{},viewport);const cdp=await c.newCDPSession(p);
+    for(const scale of ['normal','xlarge']){
+      if(scale==='xlarge'){await p.getByRole('button',{name:'Options & A11y (Esc)',exact:true}).tap();await p.getByRole('button',{name:'XLARGE',exact:true}).tap();await p.getByRole('button',{name:'Resume Campaign',exact:true}).tap();}
+      const headerControls=await p.locator('header button').evaluateAll(xs=>xs.map(e=>({x:e.getBoundingClientRect().x,right:e.getBoundingClientRect().right})));
+      assert(headerControls.every(e=>e.x>=0 && e.right<=viewport.width+1));
+      await tab(p,'Trade',true);await shot(p,`${name}-${scale}-trade`);
+      const trade=await p.locator('main').evaluate(el=>({width:el.clientWidth,scrollWidth:el.scrollWidth,scrollLeft:el.scrollLeft}));assert.equal(trade.scrollWidth,trade.width);
+      await tab(p,'Skills',true);await tab(p,'Alchemy',true);
+      if(scale==='normal'){const before=await state(p);await p.getByRole('button',{name:/Brew Batch/}).tap();await p.waitForTimeout(30);const after=await state(p);assert.equal(after.customBrewsCount,before.customBrewsCount+1);evidence.push({name,action:'touch-brew',before,after});}
+      await shot(p,`${name}-${scale}-alchemy`);
+      await tab(p,'Traps',true);
+      if(scale==='normal'){const before=await state(p);await p.getByRole('button',{name:/Assemble 2 Units/}).tap();await p.waitForTimeout(30);const after=await state(p);assert.equal(after.customTrapsCount,before.customTrapsCount+1);evidence.push({name,action:'touch-assemble',before,after});}
+      await shot(p,`${name}-${scale}-traps`);
+      await tab(p,'Arena',true);const canvas=p.locator('canvas');await canvas.scrollIntoViewIfNeeded();await p.waitForTimeout(50);
+      const b=(await canvas.boundingBox())!,before={x:await canvas.getAttribute('data-camera-x'),y:await canvas.getAttribute('data-camera-y'),scroll:await p.locator('main').evaluate(el=>el.scrollLeft)};
+      const x=b.x+b.width*.75,y=b.y+b.height*.55;
+      await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y,id:0}]});
+      for(let i=1;i<=8;i++){await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:x-i*18,y:y-i*2,id:0}]});await p.waitForTimeout(25);await p.screenshot({path:path.join(out,`${name}-${scale}-frame-${i}.png`)});}
+      await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await p.waitForTimeout(50);
+      const after={x:await canvas.getAttribute('data-camera-x'),y:await canvas.getAttribute('data-camera-y'),scroll:await p.locator('main').evaluate(el=>el.scrollLeft)};
+      assert.notEqual(before.x,after.x);assert.equal(before.scroll,0);assert.equal(after.scroll,0);await shot(p,`${name}-${scale}-panned`);
+      const geo=await p.locator('main').evaluate(el=>({width:el.clientWidth,scrollWidth:el.scrollWidth,controls:[...el.querySelectorAll('button,select')].map(e=>({text:e.textContent?.trim(),x:e.getBoundingClientRect().x,right:e.getBoundingClientRect().right,scroll:e.scrollWidth,width:e.clientWidth}))}));
+      assert.equal(geo.scrollWidth,geo.width);assert(geo.controls.every(e=>e.x>=0 && e.right<=viewport.width+1));
+      evidence.push({name,scale,before,after,trade,geometry:geo});
+    }
+    await c.close();
+  }
+  assert.deepEqual(errors,[]);console.log('Browser recovery, import, conservation, temporal reset, portrait touch: assertions passed');
+} finally {fs.writeFileSync(path.join(out,'browser-foundation.json'),JSON.stringify({evidence,errors},null,2));await browser.close();}
+
+==== END FILE scripts/browser_foundation.ts ====
+
+==== BEGIN FILE scripts/replay_parity.ts BLOB 25560f91739bcedf12984b253dc282db61f0bab0 ====
+/** Builder verification using real stock-card clicks; historical fixtures are labelled diagnostics. */
+import fs from 'node:fs';
+import path from 'node:path';
+import zlib from 'node:zlib';
+import assert from 'node:assert/strict';
+import { chromium } from 'playwright';
+import { normalizeLoadedSave } from '../src/engine/saveManager';
+import { computeQuotation, executeCommercialTransaction } from '../src/engine/economyEngine';
+
+const out=process.env.EVIDENCE_DIR ?? 'artifacts/sim002b'; fs.mkdirSync(out,{recursive:true});
+const base=process.env.TEST_URL ?? 'http://127.0.0.1:4178';
+const browser=await chromium.launch({headless:true, executablePath:process.env.BROWSER_PATH || undefined});
+const context=await browser.newContext({viewport:{width:1440,height:1000}});
+const page=await context.newPage(); const errors:string[]=[];
+page.on('pageerror',e=>errors.push(e.message));
+await page.addInitScript(()=>{const pending=sessionStorage.getItem('__fixture');if(pending){localStorage.clear();localStorage.setItem('trap_and_tonic_save_v2',pending);sessionStorage.removeItem('__fixture');}});
+await page.goto(base);
+const suites=process.argv.includes('--quick') ? ['historical-f368-60'] : ['historical-f368-60','historical-c45-60','captured-ui-60'];
+const summaries:any[]=[];
+try {
+  for(const suite of suites) {
+    const cases=JSON.parse(zlib.gunzipSync(fs.readFileSync(new URL(`./fixtures/${suite}.json.gz`,import.meta.url))).toString());
+    const records:any[]=[];
+    for(const [i,t] of cases.entries()) {
+      let state=normalizeLoadedSave(t.before);
+      if(t.commands.length) state.tradeTerms=t.commands[0].terms;
+      await page.evaluate(s=>sessionStorage.setItem('__fixture',JSON.stringify(s)),state);
+      await page.reload();await page.getByRole('button',{name:/^(Open Merchant Ledger|Continue Ledger)/}).click();
+      await page.waitForTimeout(30);
+      const steps:any[]=[];
+      for(const action of t.commands) {
+        const before=structuredClone(state), p=state.products.find(p=>p.id===action.productId)!;
+        const buyer=(action.buyerType==='MASTER'?state.masters:state.parties).find(b=>b.id===action.buyerId)!;
+        // Historical traces target the scheduled customers. Selecting also exercises the real UI control.
+        const select=page.getByRole('combobox',{name:action.buyerType==='MASTER'?'Scheduled Dungeon Master':'Scheduled Adventuring Party'});
+        if(await select.inputValue()!==buyer.id) {await select.selectOption(buyer.id);state.scheduledMatchups[state.activeRegion][action.buyerType==='MASTER'?'masterId':'partyId']=buyer.id;}
+        const quote=computeQuotation(p,buyer,action.buyerType,{...action.terms,day:state.day,seed:state.seed,rulesVersion:state.rulesVersion,unlockedSkills:state.skills.filter(s=>s.unlocked).map(s=>s.effectKey)});
+        const tx=executeCommercialTransaction(state,action.buyerType,buyer.id,p,action.terms);
+        const title=p.name+' [#'+(p.formulaSignature||p.id.slice(-6)).toUpperCase()+']';
+        const card=page.getByText(title,{exact:true}).locator('../..');
+        const button=card.getByRole('button').first();const quoteCard=await card.innerText();
+        const enabled=await button.isEnabled();
+        assert.equal(enabled,tx.success,`${suite}/${i}: UI acceptance differs: ${tx.reason}`);
+        if(enabled) {
+          if(process.argv.includes('--negative')) fs.writeFileSync(path.join(out,'negative-quote.json'),JSON.stringify({actualExpected:quote.unitPrice,mutatedExpected:quote.unitPrice+1,button:await button.innerText()}));
+          assert.match(await button.innerText(),new RegExp(`\\(${quote.unitPrice+(process.argv.includes('--negative')?1:0)}g\\)`));
+          await button.click(); state=tx.nextState!;
+        } else { assert(!quote.acceptable);assert(quote.refusalReason);assert.equal(tx.reason,quote.refusalReason);assert(quoteCard.includes(quote.refusalReason)); }
+        await page.waitForTimeout(20);
+        const actual=await page.evaluate(()=>JSON.parse(localStorage.getItem('trap_and_tonic_save_v2')!));
+        let diff:string|null=null;try{assert.deepEqual(actual,state);}catch(e){diff=String(e);}
+        steps.push({action,before,quote,quoteCard,enabled,expected:tx,actual,diff});
+        if(diff) { fs.writeFileSync(path.join(out,'parity-failure.json'),JSON.stringify(steps));assert.fail(`${suite}/${i}: ${diff}`); }
+      }
+      records.push({index:i,strategy:t.strategy,day:t.day,steps,matched:true});
+      if(i===0) await page.screenshot({path:path.join(out,`${suite}-desktop.png`)});
+      if((i+1)%12===0) console.log(`${suite}: ${i+1}/60 matched`);
+    }
+    assert.equal(records.length,60);assert(records.some(r=>r.steps.length>0));
+    fs.writeFileSync(path.join(out,`${suite}-replay.json.gz`),zlib.gzipSync(JSON.stringify(records)));
+    summaries.push({suite,traces:60,matched:records.length,actions:records.reduce((n,r)=>n+r.steps.length,0)});
+  }
+  assert.deepEqual(errors,[]);
+  // Mutation changes the actual compared quote, not a precomputed PASS flag.
+  const negative=process.argv.includes('--negative');
+  const last=summaries.at(-1); assert(last.actions>0);
+  // The per-action comparison above is the acceptance assertion; a negative run mutates its real expected quote.
+  assert(!negative, 'Use --negative to mutate a real quote in the action loop');
+  fs.writeFileSync(path.join(out,'parity-summary.json'),JSON.stringify({status:'SELF-TESTED / INDEPENDENT ACCEPTANCE PENDING',summaries,errors},null,2));
+} finally {await browser.close();}
+
+==== END FILE scripts/replay_parity.ts ====
+
+==== BEGIN FILE scripts/offline_smoke.ts BLOB d4fe9934cf2b857bca4dff6658a836f87df4a8a6 ====
+import fs from 'node:fs';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+import { chromium } from 'playwright';
+const out=process.env.EVIDENCE_DIR ?? 'artifacts/sim002b';fs.mkdirSync(out,{recursive:true});
+const url=process.env.OFFLINE_TEST_URL ?? 'http://127.0.0.1:4179';
+const profile=fs.mkdtempSync(path.join(out,'cold-profile-'));
+const options={headless:true,executablePath:process.env.BROWSER_PATH||undefined,viewport:{width:412,height:915},isMobile:true,hasTouch:true};
+let c=await chromium.launchPersistentContext(profile,options);let p=await c.newPage();
+const errors:string[]=[];p.on('pageerror',e=>errors.push(e.message));
+try {
+  await p.goto(url);await p.getByRole('button',{name:/^Open Merchant Ledger/}).tap();
+  await p.getByRole('button',{name:/^Run Scheduled Expedition/}).tap();
+  await p.waitForFunction(()=>JSON.parse(localStorage.getItem('trap_and_tonic_save_v2')!).day===2);
+  await p.evaluate(()=>navigator.serviceWorker.ready);await p.waitForFunction(()=>!!navigator.serviceWorker.controller);
+  const before=await p.evaluate(()=>localStorage.getItem('trap_and_tonic_save_v2'));
+  await c.setOffline(true);
+  const blocked=await p.evaluate(async()=>{try{await fetch('/definitely-not-cached-offline-probe?'+Date.now());return false;}catch{return true;}});assert(blocked);
+  await c.close();
+  // New browser process, same durable profile; network restricted before first navigation.
+  c=await chromium.launchPersistentContext(profile,{...options,offline:true});p=await c.newPage();p.on('pageerror',e=>errors.push(e.message));
+  await p.goto(url);await p.getByRole('button',{name:/^Continue Ledger/}).tap();
+  const after=await p.evaluate(()=>localStorage.getItem('trap_and_tonic_save_v2'));
+  assert.equal(after,before);const stillBlocked=await p.evaluate(async()=>{try{await fetch('/uncached-cold-probe?'+Date.now());return false;}catch{return true;}});assert(stillBlocked);
+  await p.screenshot({path:path.join(out,'offline-cold-reopen.png')});assert.deepEqual(errors,[]);
+  fs.writeFileSync(path.join(out,'offline-proof.json'),JSON.stringify({url,profile,networkBlockedBeforeClose:blocked,networkBlockedAfterColdOpen:stillBlocked,before:JSON.parse(before!),after:JSON.parse(after!),errors,physicalAndroid:'NOT TESTED',apk:'NOT TESTED',osKill:'NOT TESTED'},null,2));
+  console.log('Network-restricted production browser cold reopen: exact save preserved');
+} finally {await c.close();}
+
+==== END FILE scripts/offline_smoke.ts ====
+
+==== BEGIN FILE scripts/verify_negative.mjs BLOB d01f3436442e0deb8fd3a63fa6625723a450d02e ====
+import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+const out=process.env.EVIDENCE_DIR??'artifacts/sim002b';fs.mkdirSync(out,{recursive:true});
+const result=spawnSync(process.execPath,['node_modules/tsx/dist/cli.mjs','scripts/replay_parity.ts','--quick','--negative'],{encoding:'utf8',env:process.env});
+fs.writeFileSync(path.join(out,'negative-control.log'),result.stdout+result.stderr);
+assert.equal(result.status,1,'deliberately corrupted comparison must exit 1');
+assert.match(result.stderr,/AssertionError/);
+const proof=JSON.parse(fs.readFileSync(path.join(out,'negative-quote.json'),'utf8'));
+assert.equal(proof.mutatedExpected,proof.actualExpected+1);
+assert.match(proof.button,new RegExp(`\\(${proof.actualExpected}g\\)`));
+fs.writeFileSync(path.join(out,'negative-exit.json'),JSON.stringify({exitCode:result.status,proof},null,2));
+console.log('Negative control: real compared quote +1g rejected with exit 1');
+
+==== END FILE scripts/verify_negative.mjs ====
+
+==== BEGIN FILE scripts/run_sim_002b.ts BLOB 2a290e429df15819957f06af200cad6d3260e9ac ====
+/** New evidence only. Never writes SIM-001 or previous SIM-002 results. */
+import fs from 'node:fs';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import zlib from 'node:zlib';
+import { execFileSync } from 'node:child_process';
+import assert from 'node:assert/strict';
+import { runSingleCampaign, StrategyId, CampaignMetrics } from '../src/engine/campaignRunner';
+import { validateSavePayload } from '../src/engine/saveManager';
+const out=process.env.CAMPAIGN_DIR ?? 'artifacts/sim002b/campaigns';
+assert(!fs.existsSync(path.join(out,'campaign_results.csv')),'Existing evidence must not be overwritten');fs.mkdirSync(out,{recursive:true});
+const git=(...args:string[])=>execFileSync('git',args,{encoding:'utf8'}).trim();
+assert.equal(git('diff','--name-only','c45f33e143f71acd7a66edacf773161fb4b9416f','--','sim_001_archive','public/sim_001'),'','Frozen SIM-001 changed');
+const sourceCommit=git('rev-parse','HEAD'),sourceTree=git('rev-parse','HEAD^{tree}');
+const strategies: StrategyId[]=['BALANCED_MERCHANT','DUNGEON_LOYALIST','HERO_BENEFACTOR','ALCHEMICAL_INDUSTRIALIST','PREDATORY_CAPITALIST'];
+const metrics:CampaignMetrics[]=[];const sampleEvents:any[]=[];const sampleActions:any[]=[];
+for(let offset=0;offset<1000;offset++){
+  const seed=20260001+offset;
+  for(const strategy of strategies){
+    const result=runSingleCampaign(seed,strategy,120,offset<5,offset===0?event=>{if(event.before.day<=3)sampleActions.push({strategy,...event});}:undefined);
+    const validation=validateSavePayload(JSON.stringify(result.finalState));assert(validation.valid,`${seed}/${strategy}: ${validation.error}`);
+    assert.equal(result.finalState.financialLedger.length,120);
+    assert.equal(result.metrics.grossRevenue,result.finalState.contractHistory.reduce((n,c)=>n+c.totalRevenue,0));
+    assert.equal(result.metrics.endingCash,result.finalState.financialLedger[0].endingCash);
+    metrics.push(result.metrics);sampleEvents.push(...result.events);
+  }
+  if((offset+1)%100===0)console.log(`${(offset+1)*5}/5000 campaigns complete`);
+}
+const columns=Object.keys(metrics[0]) as (keyof CampaignMetrics)[];const csv=(v:any)=>JSON.stringify(typeof v==='object'?JSON.stringify(v):String(v??''));
+fs.writeFileSync(path.join(out,'campaign_results.csv'),columns.join(',')+'\n'+metrics.map(m=>columns.map(k=>csv(m[k])).join(',')).join('\n')+'\n');
+fs.writeFileSync(path.join(out,'transaction-replays.json.gz'),zlib.gzipSync(JSON.stringify(sampleActions)));
+fs.writeFileSync(path.join(out,'economy-events.json'),JSON.stringify(sampleEvents));
+const median=(xs:number[])=>{xs.sort((a,b)=>a-b);return (xs[499]+xs[500])/2;};
+const summary=strategies.map(strategy=>{const rows=metrics.filter(m=>m.strategy===strategy);return {strategy,campaigns:rows.length,medianRevenue:median(rows.map(m=>m.grossRevenue)),medianNetProfit:median(rows.map(m=>m.netProfit)),bankruptcies:rows.filter(m=>m.strictBankruptcyOccurred).length,expertUnlocked:rows.filter(m=>m.dayReachedExpert!==null).length};});
+const manifest={status:'SELF-TESTED / INDEPENDENT ACCEPTANCE PENDING',sourceCommit,sourceTree,pairedSeeds:1000,campaigns:5000,horizonDays:120,node:process.version,summary,
+  caveats:['Strategy policies select crafting, financing and progression timing; these campaigns do not certify whole-campaign UI equivalence.','Specialists cannot unlock Expert through casual peer codes; the bilateral solo commission still applies.','No balancing changes or independent enjoyment acceptance inferred.','Physical Android / APK / OS kill NOT TESTED.']};
+fs.writeFileSync(path.join(out,'manifest.json'),JSON.stringify(manifest,null,2));
+fs.writeFileSync(path.join(out,'SIM-002B_REPORT.md'),`# SIM-002B builder campaign results\n\nSELF-TESTED / INDEPENDENT ACCEPTANCE PENDING\n\nCommit: ${sourceCommit}\nTree: ${sourceTree}\n\n1,000 identical seeds across five strategies, 120 days each. All final states validated; revenue reconciled to actual contracts and ending cash to the daily ledger.\n\n| Strategy | Median revenue | Median profit | Insolvent campaigns | Expert reached |\n|---|---:|---:|---:|---:|\n${summary.map(s=>`| ${s.strategy} | ${s.medianRevenue} | ${s.medianNetProfit} | ${s.bankruptcies}/1000 | ${s.expertUnlocked}/1000 |`).join('\n')}\n\n${manifest.caveats.map(c=>'- '+c).join('\n')}\n`);
+const sums=fs.readdirSync(out).filter(n=>fs.statSync(path.join(out,n)).isFile()).sort().map(n=>crypto.createHash('sha256').update(fs.readFileSync(path.join(out,n))).digest('hex')+'  '+n).join('\n');
+fs.writeFileSync(path.join(out,'SHA256SUMS.txt'),sums+'\n');console.log(JSON.stringify(manifest,null,2));
+
+==== END FILE scripts/run_sim_002b.ts ====
+
+==== BEGIN FILE scripts/verify_sim002a_acceptance.ts BLOB b870eec6ce29dfe3adf6eda8d4335f52fde3d007 ====
+// Compatibility entry point: assertions exercise populated commands before daily clearing.
+// Builder self-tests; independent acceptance remains a separate activity.
+import './foundation.test';
+
+==== END FILE scripts/verify_sim002a_acceptance.ts ====
+
+==== BEGIN FILE .github/workflows/foundation.yml BLOB bc40f528bce29e3e821963b08da3e7e9077e3c05 ====
+name: SIM-002B foundation
+on: [push, pull_request]
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run lint && npm test && npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: |
+          npm run dev -- --port 4178 --host 127.0.0.1 > /tmp/dev.log 2>&1 &
+          npm run preview -- --port 4179 --host 127.0.0.1 > /tmp/preview.log 2>&1 &
+          node -e "async function wait(url){for(let i=0;i<100;i++){try{if((await fetch(url)).ok)return}catch{}await new Promise(r=>setTimeout(r,200))}throw Error(url)};await Promise.all([wait('http://127.0.0.1:4178'),wait('http://127.0.0.1:4179')])"
+      - run: npm run test:browser && npm run test:negative && npm run test:offline
+      - run: npx tsx scripts/run_sim_002b.ts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sim002b-builder-evidence
+          path: |
+            artifacts/sim002b/*.json
+            artifacts/sim002b/*.gz
+            artifacts/sim002b/*.png
+            artifacts/sim002b/*.log
+            artifacts/sim002b/campaigns/*
+
+==== END FILE .github/workflows/foundation.yml ====
