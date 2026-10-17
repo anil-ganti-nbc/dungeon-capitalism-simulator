@@ -172,11 +172,24 @@ export function executeCommercialTransaction(
     marketSentiment?: number;
   }
 ): TransactionResult {
-  const stockAvailable = product.stock > 0;
-  if (!stockAvailable) {
-    return { success: false, reason: 'Product is out of stock.' };
+  // 1. Strict validation: check current authoritative product stock (Gate 3)
+  if (!product || !product.id || !Array.isArray(prevState.products)) {
+    return { success: false, reason: 'Invalid or missing product reference.' };
+  }
+  const currentProduct = prevState.products.find((p) => p && p.id === product.id);
+  if (!currentProduct || currentProduct.stock <= 0) {
+    return { success: false, reason: 'Product is out of stock or reference is stale.' };
   }
 
+  // 2. Strict validation: target audience match
+  if (buyerType === 'MASTER' && currentProduct.targetAudience === 'HERO') {
+    return { success: false, reason: 'Product is formulated exclusively for hero parties.' };
+  }
+  if (buyerType === 'HERO' && currentProduct.targetAudience === 'MASTER') {
+    return { success: false, reason: 'Trap hazard is engineered exclusively for dungeon masters.' };
+  }
+
+  // 3. Strict validation: buyer existence & regional accessibility
   const buyer =
     buyerType === 'MASTER'
       ? prevState.masters.find((m) => m.id === buyerId)
@@ -186,8 +199,16 @@ export function executeCommercialTransaction(
     return { success: false, reason: 'Buyer not found in region.' };
   }
 
+  if (
+    buyer.region &&
+    buyer.region !== prevState.activeRegion &&
+    !prevState.unlockedRegions.includes(buyer.region as any)
+  ) {
+    return { success: false, reason: 'Buyer is located in an inaccessible locked region.' };
+  }
+
   const skills = prevState.skills.filter((s) => s.unlocked).map((s) => s.effectKey);
-  const quotation = computeQuotation(product, buyer, buyerType, {
+  const quotation = computeQuotation(currentProduct, buyer, buyerType, {
     priceMultiplier: terms.priceMultiplier,
     warrantyBacked: terms.warrantyBacked,
     exclusiveDeal: terms.exclusiveDeal,
@@ -205,17 +226,17 @@ export function executeCommercialTransaction(
   const unitPrice = quotation.unitPrice;
   const contractSeq = prevState.contractHistory.length + 1;
   const newContract: SaleContract = {
-    id: `cnt_d${prevState.day}_n${contractSeq}_${product.id}`,
+    id: `cnt_d${prevState.day}_n${contractSeq}_${currentProduct.id}`,
     day: prevState.day,
     buyerType,
     buyerId,
     buyerName: buyer.name,
-    productId: product.id,
-    productName: product.name,
+    productId: currentProduct.id,
+    productName: currentProduct.name,
     quantity: 1,
     unitPrice,
     totalRevenue: unitPrice,
-    unitCost: product.productionCost,
+    unitCost: currentProduct.productionCost,
     warrantyBacked: terms.warrantyBacked,
     exclusiveDeal: terms.exclusiveDeal,
     secretProvenance: terms.secretProvenance,
@@ -224,35 +245,38 @@ export function executeCommercialTransaction(
 
   // Decrement product stock
   const nextProducts = prevState.products.map((p) =>
-    p.id === product.id ? { ...p, stock: Math.max(0, p.stock - 1) } : p
+    p.id === currentProduct.id ? { ...p, stock: Math.max(0, p.stock - 1) } : p
   );
 
+  // Update Master: installed hazards (max 3), budget, trust, memory
   const nextMasters = prevState.masters.map((m) => {
     if (buyerType === 'MASTER' && m.id === buyerId) {
       return {
         ...m,
         budget: Math.max(0, m.budget - unitPrice),
         trust: Math.max(10, Math.min(100, m.trust + quotation.expectedTrustDelta)),
-        installedHazards: Array.from(new Set([product.id, ...m.installedHazards])).slice(0, 3),
+        installedHazards: [currentProduct.id, ...m.installedHazards.filter((h) => h !== currentProduct.id)].slice(0, 3),
         memoryLog: [
           ...m.memoryLog,
-          `Day ${prevState.day}: Purchased ${product.name} [#${product.formulaSignature || product.id.slice(-6)}] for ${unitPrice}g.`
+          `Day ${prevState.day}: Purchased ${currentProduct.name} [#${currentProduct.formulaSignature || currentProduct.id.slice(-6)}] for ${unitPrice}g.`
         ]
       };
     }
     return m;
   });
 
+  // Update Party: potion charges are finite individual consumable doses (Gate 3)
+  // Two purchased potions represent two distinct charges, NOT collapsed into 1 unique ID
   const nextParties = prevState.parties.map((p) => {
     if (buyerType === 'HERO' && p.id === buyerId) {
       return {
         ...p,
         budget: Math.max(0, p.budget - unitPrice),
         trust: Math.max(10, Math.min(100, p.trust + quotation.expectedTrustDelta)),
-        equippedProducts: Array.from(new Set([product.id, ...p.equippedProducts])).slice(0, 3),
+        equippedProducts: [currentProduct.id, ...p.equippedProducts].slice(0, 4),
         memoryLog: [
           ...p.memoryLog,
-          `Day ${prevState.day}: Purchased ${product.name} [#${product.formulaSignature || product.id.slice(-6)}] for ${unitPrice}g.`
+          `Day ${prevState.day}: Purchased ${currentProduct.name} [#${currentProduct.formulaSignature || currentProduct.id.slice(-6)}] for ${unitPrice}g.`
         ]
       };
     }

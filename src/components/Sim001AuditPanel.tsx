@@ -626,7 +626,7 @@ export const Sim001AuditPanel: React.FC = () => {
                     className={`px-2.5 py-0.5 rounded text-xs font-mono font-bold border ${
                       test.status === 'PASS'
                         ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                        : test.status === 'EXPLOIT_CONFIRMED'
+                        : (test.status as string) === 'EXPLOIT_CONFIRMED'
                         ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
                         : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
                     }`}

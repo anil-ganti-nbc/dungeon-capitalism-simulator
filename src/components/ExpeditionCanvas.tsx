@@ -414,8 +414,12 @@ export const ExpeditionCanvas: React.FC<ExpeditionCanvasProps> = React.memo(({
   }, []);
 
   return (
-    <div className="relative w-full h-full overflow-hidden bg-[#0B0E14]">
-      <canvas ref={canvasRef} className="block w-full h-full" />
+    <div className="relative w-full h-full overflow-hidden bg-[#0B0E14] touch-pan-y">
+      <canvas
+        ref={canvasRef}
+        className="block w-full h-full max-w-full touch-pan-y"
+        style={{ touchAction: 'pan-y' }}
+      />
     </div>
   );
 });

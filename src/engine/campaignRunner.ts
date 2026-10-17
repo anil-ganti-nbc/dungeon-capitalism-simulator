@@ -191,8 +191,8 @@ export function runSingleCampaign(
   strategy: StrategyId,
   horizonDays: number = 120,
   recordEvents: boolean = false
-): { metrics: CampaignMetrics; events: EconomyEventLogEntry[]; actionLog: string[] } {
-  const state = createBaselineState(seed);
+): { metrics: CampaignMetrics; events: EconomyEventLogEntry[]; actionLog: string[]; finalState: GameSaveState } {
+  let state = createBaselineState(seed);
   const campaignId = `${strategy.slice(0, 4)}_S${seed}`;
   const events: EconomyEventLogEntry[] = [];
   const actionLog: string[] = [];
@@ -602,7 +602,6 @@ export function runSingleCampaign(
           trapName = 'Armored Cave-Basilisk Lair Module';
         }
       } else if (
-        strategy === 'HERO_BENEFACTOR' ||
         strategy === 'ALCHEMICAL_INDUSTRIALIST' ||
         (strategy === 'BALANCED_MERCHANT' && d % 2 === 0)
       ) {
@@ -655,8 +654,8 @@ export function runSingleCampaign(
       state.parties,
       state.scheduledMatchups
     );
-    const activeMaster = schedule.currentMaster;
-    const activeParty = schedule.currentParty;
+    let activeMaster = schedule.currentMaster;
+    let activeParty = schedule.currentParty;
 
     // For Dungeon Loyalist, strip default hero antidotes when heroes run out of supplies
     if (strategy === 'DUNGEON_LOYALIST' && d > 3) {
@@ -713,7 +712,7 @@ export function runSingleCampaign(
       masterChurnCount += 1;
     }
 
-    if (shouldSellToMaster && !masterBoycottsToday) {
+    if (shouldSellToMaster) {
       const masterOptions = state.products.filter(
         (p) => (p.targetAudience === 'MASTER' || p.targetAudience === 'BOTH') && p.stock > 0
       );
@@ -732,47 +731,25 @@ export function runSingleCampaign(
         let salesMade = 0;
         for (const prod of sorted) {
           if (prod.stock > 0 && salesMade < maxMasterSalesToday) {
-            const trustFactor =
-              activeMaster.trust < 55
-                ? 0.78 + activeMaster.trust * 0.003
-                : activeMaster.trust >= 85
-                ? 1.08
-                : 1.0;
-            const askPrice = Math.max(
-              25,
-              Math.round(prod.suggestedPrice * baseMultiplier * trustFactor) - (secretMark ? 35 : 0)
-            );
-            if (activeMaster.budget >= askPrice) {
-              prod.stock -= 1;
-              activeMaster.budget -= askPrice;
-              const trustDelta = strategy === 'PREDATORY_CAPITALIST' ? -3 : warranty ? 5 : 2;
-              activeMaster.trust = Math.max(15, Math.min(100, activeMaster.trust + trustDelta));
-              activeMaster.installedHazards = Array.from(
-                new Set([prod.id, ...activeMaster.installedHazards])
-              ).slice(0, 3);
-              state.gold += askPrice;
-              const cnt: SaleContract = {
-                id: `cnt_m_${d}_${salesMade}`,
-                day: d,
-                buyerType: 'MASTER',
-                buyerId: activeMaster.id,
-                buyerName: activeMaster.name,
-                productId: prod.id,
-                productName: prod.name,
-                quantity: 1,
-                unitPrice: askPrice,
-                totalRevenue: askPrice,
-                unitCost: prod.productionCost,
-                warrantyBacked: warranty,
-                exclusiveDeal: exclusive,
-                secretProvenance: secretMark,
-                creditFinanced: false
-              };
-              state.contractsToday.push(cnt);
-              state.contractHistory.push(cnt);
+            const tx = executeCommercialTransaction(state, 'MASTER', activeMaster.id, prod, {
+              priceMultiplier: pricePct / 100,
+              warrantyBacked: warranty,
+              exclusiveDeal: exclusive,
+              secretProvenance: secretMark,
+              marketSentiment
+            });
+            if (tx.success && tx.nextState) {
+              state = tx.nextState;
+              activeMaster = state.masters.find((m) => m.id === activeMaster.id)!;
+              if (state.parties.find((p) => p.id === activeParty.id)) {
+                activeParty = state.parties.find((p) => p.id === activeParty.id)!;
+              }
               masterContractsSigned += 1;
               salesMade += 1;
-              actionLog.push(`D${d}:SELL_MASTER:${activeMaster.id}:${prod.id}:${askPrice}`);
+              actionLog.push(`D${d}:SELL_MASTER:${activeMaster.id}:${prod.id}:${tx.unitPrice}`);
+            } else if (tx.reason?.includes('boycott')) {
+              masterChurnCount += 1;
+              break;
             }
           }
         }
@@ -786,13 +763,7 @@ export function runSingleCampaign(
       strategy === 'ALCHEMICAL_INDUSTRIALIST' ||
       strategy === 'PREDATORY_CAPITALIST';
 
-    const heroBoycottsToday =
-      activeParty.trust < 50 && dayRng.next() < (54 - activeParty.trust) * 0.016;
-    if (heroBoycottsToday) {
-      heroChurnCount += 1;
-    }
-
-    if (shouldSellToHero && !heroBoycottsToday) {
+    if (shouldSellToHero) {
       const heroOptions = state.products.filter(
         (p) => (p.targetAudience === 'HERO' || p.targetAudience === 'BOTH') && p.stock > 0
       );
@@ -812,54 +783,25 @@ export function runSingleCampaign(
         let salesMade = 0;
         for (const prod of sorted) {
           if (prod.stock > 0 && salesMade < maxHeroSalesToday) {
-            const trustFactor =
-              activeParty.trust < 55
-                ? 0.78 + activeParty.trust * 0.003
-                : activeParty.trust >= 85
-                ? 1.09
-                : 1.0;
-            const alchemyPremium =
-              strategy === 'ALCHEMICAL_INDUSTRIALIST' && prod.stability >= 75
-                ? paradoxAlchemy
-                  ? 1.24
-                  : 1.15
-                : 1.0;
-            const askPrice = Math.max(
-              25,
-              Math.round(prod.suggestedPrice * baseMultiplier * trustFactor * alchemyPremium) -
-                (secretMark ? 35 : 0)
-            );
-            if (activeParty.budget >= askPrice) {
-              prod.stock -= 1;
-              activeParty.budget -= askPrice;
-              const trustDelta = strategy === 'PREDATORY_CAPITALIST' ? -3 : warranty ? 6 : 3;
-              activeParty.trust = Math.max(15, Math.min(100, activeParty.trust + trustDelta));
-              activeParty.equippedProducts = Array.from(
-                new Set([prod.id, ...activeParty.equippedProducts])
-              ).slice(0, 3);
-              state.gold += askPrice;
-              const cnt: SaleContract = {
-                id: `cnt_h_${d}_${salesMade}`,
-                day: d,
-                buyerType: 'HERO',
-                buyerId: activeParty.id,
-                buyerName: activeParty.name,
-                productId: prod.id,
-                productName: prod.name,
-                quantity: 1,
-                unitPrice: askPrice,
-                totalRevenue: askPrice,
-                unitCost: prod.productionCost,
-                warrantyBacked: warranty,
-                exclusiveDeal: exclusive,
-                secretProvenance: secretMark,
-                creditFinanced: false
-              };
-              state.contractsToday.push(cnt);
-              state.contractHistory.push(cnt);
+            const tx = executeCommercialTransaction(state, 'HERO', activeParty.id, prod, {
+              priceMultiplier: pricePct / 100,
+              warrantyBacked: warranty,
+              exclusiveDeal: exclusive,
+              secretProvenance: secretMark,
+              marketSentiment
+            });
+            if (tx.success && tx.nextState) {
+              state = tx.nextState;
+              activeParty = state.parties.find((p) => p.id === activeParty.id)!;
+              if (state.masters.find((m) => m.id === activeMaster.id)) {
+                activeMaster = state.masters.find((m) => m.id === activeMaster.id)!;
+              }
               heroContractsSigned += 1;
               salesMade += 1;
-              actionLog.push(`D${d}:SELL_HERO:${activeParty.id}:${prod.id}:${askPrice}`);
+              actionLog.push(`D${d}:SELL_HERO:${activeParty.id}:${prod.id}:${tx.unitPrice}`);
+            } else if (tx.reason?.includes('boycott')) {
+              heroChurnCount += 1;
+              break;
             }
           }
         }
@@ -1123,7 +1065,8 @@ export function runSingleCampaign(
       notableStoryLog
     },
     events,
-    actionLog
+    actionLog,
+    finalState: state
   };
 }
 

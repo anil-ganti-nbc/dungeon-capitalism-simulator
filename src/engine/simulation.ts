@@ -332,20 +332,46 @@ export function simulateRegionExpedition(
     .map((id) => productsCatalog.find((p) => p.id === id))
     .filter((p): p is CraftedProduct => Boolean(p));
 
-  if (masterProducts.length === 0) {
-    const fallbackPlate =
-      productsCatalog.find((p) => p.id === 'prod_trap_plate_spikes') ||
-      productsCatalog.find((p) => p.targetAudience === 'MASTER') ||
-      productsCatalog[0];
-    if (fallbackPlate) masterProducts.push(fallbackPlate);
-  }
+  // If master has 0 installed player traps, dungeon operates with inherent environmental hazards (Gate 3)
+  // We NEVER inject fake consumable player sales (e.g. prod_trap_plate_spikes) into player catalog or master!
+  const effectiveMasterHazards: CraftedProduct[] =
+    masterProducts.length > 0
+      ? masterProducts
+      : [
+          {
+            id: 'env_baseline_masonry',
+            name: 'Ancient Subterranean Flagstone Chokepoint',
+            category: 'TRAP_MASTER',
+            targetAudience: 'MASTER',
+            stock: 1,
+            productionCost: 0,
+            suggestedPrice: 0,
+            stability: 100,
+            potency: 22,
+            reliability: 100,
+            massEffectKg: 0,
+            sulphurVulnerable: false,
+            emitsSulphurFog: false,
+            causesPetrification: false,
+            curesPetrification: false,
+            filtersSulphur: false,
+            triggerMassThresholdKg: 65,
+            detectionDC: 30,
+            damageType: 'physical',
+            recipeComponents: [],
+            counterClasses: [],
+            description:
+              'Permanent inherent dungeon architectural masonry and natural collapsing stone slabs.',
+            reactionNotes: ['Inherent dungeon architectural masonry']
+          }
+        ];
 
   const partyProducts = party.equippedProducts
     .map((id) => productsCatalog.find((p) => p.id === id))
     .filter((p): p is CraftedProduct => Boolean(p));
 
   // Check if Sulphur Fog is present anywhere in Master's setup
-  const dungeonHasSulphurFog = masterProducts.some((p) => p.emitsSulphurFog);
+  const dungeonHasSulphurFog = effectiveMasterHazards.some((p) => p.emitsSulphurFog);
   const partyHasSulphurFilter = partyProducts.some((p) => p.filtersSulphur);
   const morphPotion = partyProducts.find((p) => p.massEffectKg <= -25) || null;
   const rustSolvent =
@@ -373,7 +399,7 @@ export function simulateRegionExpedition(
   };
 
   for (let i = 0; i < 3; i++) {
-    const hazard = masterProducts[i % masterProducts.length];
+    const hazard = effectiveMasterHazards[i % effectiveMasterHazards.length];
     const baseMass = vanguard.massKg;
     const effectiveMass = Math.max(12, baseMass + (morphPotion ? morphPotion.massEffectKg : 0));
     const threshold = hazard.triggerMassThresholdKg;
@@ -673,5 +699,29 @@ export function verifyAndParseCatalystCode(
       commissionNote: `Community merchant exchange code verified via format checksum (${trimmed}). Unauthenticated casual transfer.`,
       isAuthentic: false
     }
+  };
+}
+
+/**
+ * Pre-expedition deterministic forecast (Gate 4).
+ * Previews room encounters and outcomes matching actual simulateRegionExpedition resolution.
+ */
+export function predictExpeditionForecast(
+  day: number,
+  seed: number,
+  master: DungeonMaster,
+  party: AdventuringParty,
+  productsCatalog: CraftedProduct[],
+  contractsToday: SaleContract[] = []
+): {
+  predictedRooms: ExpeditionRoomEvent[];
+  summaryHeadline: string;
+  expectedLoot: number;
+} {
+  const sim = simulateRegionExpedition(day, seed, master, party, productsCatalog, contractsToday);
+  return {
+    predictedRooms: sim.rooms,
+    summaryHeadline: sim.summaryHeadline,
+    expectedLoot: sim.totalLooted
   };
 }

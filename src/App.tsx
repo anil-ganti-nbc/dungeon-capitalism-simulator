@@ -30,6 +30,7 @@ import {
   mergeCraftedProductIntoInventory,
   getRegionEncounterSchedule,
   simulateRegionExpedition,
+  predictExpeditionForecast,
   verifyAndParseCatalystCode
 } from './engine/simulation';
 import { hashString } from './utils/prng';
@@ -168,6 +169,25 @@ export default function App() {
       gameState.scheduledMatchups
     ]
   );
+
+  // Pre-expedition deterministic forecast (Gate 4)
+  const expeditionForecast = useMemo(() => {
+    return predictExpeditionForecast(
+      gameState.day,
+      gameState.seed,
+      activeRegionSchedule.currentMaster,
+      activeRegionSchedule.currentParty,
+      gameState.products,
+      gameState.contractsToday
+    );
+  }, [
+    gameState.day,
+    gameState.seed,
+    activeRegionSchedule.currentMaster,
+    activeRegionSchedule.currentParty,
+    gameState.products,
+    gameState.contractsToday
+  ]);
 
   const handleSelectScheduledMatchup = useCallback((masterId: string, partyId: string) => {
     setGameState((prev) => ({
@@ -582,7 +602,7 @@ export default function App() {
     );
   }, []);
 
-  // F03 Fix: Verify & Record Offline Peer Paradox Catalyst Code (Enforces Blackspire Hard-mode access & cryptographic hash)
+  // F03 Fix: Verify & Record Offline Peer Paradox Catalyst Code (Enforces Hard-mode access & authentic courier verification)
   const handleImportPeerCatalyst = useCallback(
     (code: string): { valid: boolean; message: string } => {
       const check = verifyAndParseCatalystCode(
@@ -595,22 +615,35 @@ export default function App() {
         return { valid: false, message: check.error || 'Invalid Catalyst Code.' };
       }
       soundFX.playCatalystChord();
+      const isAuthentic = check.entry.isAuthentic;
       setGameState((prev) => ({
         ...prev,
-        expertUnlocked: true,
-        unlockedRegions: prev.unlockedRegions.includes('vault')
-          ? prev.unlockedRegions
-          : [...prev.unlockedRegions, 'vault'],
-        activeRegion: 'vault',
+        expertUnlocked: isAuthentic ? true : prev.expertUnlocked,
+        unlockedRegions:
+          isAuthentic && !prev.unlockedRegions.includes('vault')
+            ? [...prev.unlockedRegions, 'vault']
+            : prev.unlockedRegions,
+        activeRegion: isAuthentic ? 'vault' : prev.activeRegion,
         catalystLedger: [check.entry!, ...prev.catalystLedger]
       }));
-      setStatusBanner(
-        `Verified Offline Peer Catalyst (#${check.entry.provenanceHash})! The Paradox Vault is now permanently unlocked!`
-      );
-      return {
-        valid: true,
-        message: `Verified Peer Catalyst from ${check.entry.senderName} (#${check.entry.provenanceHash}). The Paradox Vault is unlocked!`
-      };
+
+      if (isAuthentic) {
+        setStatusBanner(
+          `Verified Authentic Courier Catalyst (#${check.entry.provenanceHash})! The Paradox Vault (Expert) is now permanently unlocked!`
+        );
+        return {
+          valid: true,
+          message: `Verified Authentic Courier Catalyst from ${check.entry.senderName} (#${check.entry.provenanceHash}). The Paradox Vault is unlocked!`
+        };
+      } else {
+        setStatusBanner(
+          `Recorded Community Catalyst Code (#${check.entry.provenanceHash}) in ledger. Note: Unauthenticated casual codes do not attune to The Paradox Vault.`
+        );
+        return {
+          valid: true,
+          message: `Recorded Community Gift from ${check.entry.senderName} (#${check.entry.provenanceHash}) in gift ledger. Note: Legitimate Arch-Architect Courier commission is required to unlock Expert Mode.`
+        };
+      }
     },
     [gameState.day, gameState.catalystLedger, gameState.unlockedRegions]
   );
@@ -744,7 +777,7 @@ export default function App() {
 
   return (
     <div
-      className={`w-screen h-screen overflow-hidden bg-[#0B0E14] text-[#F1F5F9] flex flex-col select-none ${fontScaleClass}`}
+      className={`w-screen h-screen overflow-hidden bg-[#0B0E14] text-[#F1F5F9] flex flex-col select-none font-scale-${a11y.fontScale} ${fontScaleClass}`}
     >
       <OfflineIndicator />
 
@@ -788,7 +821,7 @@ export default function App() {
 
       {/* Main Scrollable Game Shell Container (Supports One-Thumb Portrait Mode or Full 1440px Desktop) */}
       <main
-        className={`flex-1 overflow-y-auto px-4 sm:px-6 pt-4 pb-24 lg:pb-6 space-y-5 ${
+        className={`flex-1 overflow-y-auto overflow-x-hidden max-w-full px-4 sm:px-6 pt-4 pb-24 lg:pb-6 space-y-5 ${
           a11y.oneThumbPortraitMode ? 'max-w-md mx-auto w-full border-x border-slate-800 pb-28' : 'max-w-[1440px] mx-auto w-full'
         }`}
       >
@@ -847,16 +880,16 @@ export default function App() {
 
         {/* Live Action Consequence Banner with Explicit Scheduled Matchup */}
         <div className="px-4 py-2.5 bg-[#131822] border border-slate-800 rounded-lg flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
-          <div className="space-y-0.5">
+          <div className="space-y-0.5 min-w-0 flex-1">
             <div className="text-slate-200">{statusBanner}</div>
-            <div className="text-amber-400/90">
+            <div className="text-amber-400/90 truncate">
               Scheduled Matchup: {activeRegionSchedule.currentParty.name} vs {activeRegionSchedule.currentMaster.name} · Next: {activeRegionSchedule.nextParty.name} vs {activeRegionSchedule.nextMaster.name}
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 shrink-0 max-w-full">
             <button
               onClick={handleLaunchExpedition}
-              className="min-h-[40px] px-3.5 py-1.5 bg-amber-600 hover:bg-amber-500 text-slate-950 font-semibold rounded-lg cursor-pointer whitespace-nowrap shrink-0"
+              className="min-h-[44px] px-4 py-2 bg-amber-600 hover:bg-amber-500 text-slate-950 font-semibold rounded-lg cursor-pointer max-w-full text-left sm:text-center text-xs font-mono leading-tight whitespace-normal"
             >
               Run Scheduled Expedition ({activeRegionSchedule.currentParty.name} vs {activeRegionSchedule.currentMaster.name}) →
             </button>
@@ -866,6 +899,59 @@ export default function App() {
         {/* Active Workspace View */}
         {activeTab === 'EXPEDITION_MAP' && (
           <div className="space-y-4">
+            {/* Pre-Expedition Deterministic Causal Forecast (Gate 4) */}
+            <div className="p-4 bg-[#131822] border border-slate-800 rounded-xl space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span className="text-xs font-mono font-semibold text-slate-200">
+                    PRE-EXPEDITION INTELLIGENCE &amp; CAUSAL FORECAST
+                  </span>
+                </div>
+                <div className="text-xs font-mono text-amber-400">
+                  {expeditionForecast.summaryHeadline}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {expeditionForecast.predictedRooms.map((rm) => (
+                  <div
+                    key={`forecast_${rm.roomIndex}`}
+                    className="p-3 bg-[#0B0E14] border border-slate-800/80 rounded-lg text-xs font-mono space-y-1.5"
+                  >
+                    <div className="flex items-center justify-between text-slate-400">
+                      <span>CHAMBER 0{rm.roomIndex}</span>
+                      <span
+                        className={
+                          rm.outcome === 'TRAP_BYPASSED' || rm.outcome === 'COUNTER_SUCCEEDED'
+                            ? 'text-emerald-400 font-semibold'
+                            : rm.outcome === 'REACTION_FAILURE'
+                            ? 'text-amber-400 font-semibold'
+                            : 'text-rose-400 font-semibold'
+                        }
+                      >
+                        {rm.outcome}
+                      </span>
+                    </div>
+                    <div className="text-slate-200 font-semibold truncate">{rm.hazardName}</div>
+                    <div className="text-slate-400 text-[11px] leading-relaxed">
+                      {rm.causalExplanation}
+                    </div>
+                    {rm.chemicalReaction?.includes('PARADOX MASS-INVERSION') && (
+                      <div className="text-amber-400 text-[11px] font-semibold bg-amber-950/40 p-1.5 rounded border border-amber-800/50">
+                        ⚠ Inversion Detonation: Lightweight morph triggers inverted polarity!
+                      </div>
+                    )}
+                    {rm.chemicalReaction?.includes('Temporal Rewind Loop') && (
+                      <div className="text-cyan-400 text-[11px] bg-cyan-950/40 p-1.5 rounded border border-cyan-800/50">
+                        ↻ Temporal Rewind: Restores trigger to armed state via closed timelike loop.
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
             {/* 60fps Live Dungeon Expedition Viewport with >=85% Unobstructed Playfield & pointer-events:none HUD */}
             <div className="relative w-full h-[380px] sm:h-[430px] rounded-xl overflow-hidden border border-slate-800 bg-[#0B0E14]">
               <ExpeditionCanvas
@@ -951,6 +1037,16 @@ export default function App() {
                   {rm.chemicalReaction && (
                     <div className="text-xs font-mono text-amber-300 bg-[#0B0E14] border border-slate-800 p-2 rounded mb-2">
                       {rm.chemicalReaction}
+                    </div>
+                  )}
+                  {rm.chemicalReaction?.includes('Temporal Rewind Loop') && (
+                    <div className="text-xs font-mono text-cyan-300 bg-cyan-950/40 border border-cyan-800/60 p-2 rounded mb-2">
+                      <div className="font-semibold mb-1">↻ Temporal Rewind Chronology:</div>
+                      <div className="text-[11px] text-cyan-200/90 space-y-0.5">
+                        <div>· t=0.00s: Intruder steps onto pressure trigger</div>
+                        <div>· t=0.18s: Detonation sequence actuates</div>
+                        <div>· t=0.35s: Closed timelike loop re-cocks trigger mechanism</div>
+                      </div>
                     </div>
                   )}
                   <p className="text-xs text-slate-300 leading-relaxed mb-2">{rm.causalExplanation}</p>
