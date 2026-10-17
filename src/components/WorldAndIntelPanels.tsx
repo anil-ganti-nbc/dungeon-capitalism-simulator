@@ -542,16 +542,16 @@ export const ArchivesAndCatalystPanel: React.FC<ArchivesAndCatalystProps> = ({
             </button>
           </div>
 
-          {/* Route B: Offline Peer-to-Peer Catalyst Exchange */}
+          {/* Route B: Community Merchant Dispatch Code Exchange */}
           <div className="p-4 bg-[#0B0E14] border border-slate-800 rounded-lg">
             <div className="text-xs font-mono text-sky-400 mb-1">
-              ROUTE B · OFFLINE PEER CATALYST EXCHANGE (Cryptographic Signature &amp; Replay Detection)
+              ROUTE B · COMMUNITY MERCHANT DISPATCH CODE (Format Checksum &amp; Replay Protection)
             </div>
             <p className="text-xs text-slate-400 mb-3">
-              Once Blackspire Labyrinth (Hard) is unlocked, enter a peer’s signed Catalyst dispatch code. Cryptographic signature verification and local replay detection prevent forged or duplicate hashes.
+              Once Blackspire Labyrinth (Hard) is unlocked, enter a community peer dispatch code. Codes are verified for format syntax and local replay prevention. Note: this is a casual community trade code; authentic offline progression is earned via Vespera’s Solo Commission above.
             </p>
             <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 bg-slate-900 border border-slate-800 rounded text-xs font-mono mb-3">
-              <span className="text-slate-300">Your Outbound Peer Dispatch Code:</span>
+              <span className="text-slate-300">Your Outbound Community Dispatch Code:</span>
               <span className="text-emerald-400 font-semibold select-all">{outboundShareCode}</span>
             </div>
 
@@ -560,7 +560,7 @@ export const ArchivesAndCatalystPanel: React.FC<ArchivesAndCatalystProps> = ({
                 type="text"
                 value={peerInputCode}
                 onChange={(e) => setPeerInputCode(e.target.value)}
-                placeholder="Paste Signed Peer Catalyst Code"
+                placeholder="Enter Community Dispatch Code (CATALYST-...)"
                 className="flex-1 bg-slate-900 border border-slate-700 rounded px-3 py-2 text-xs font-mono text-slate-100"
               />
               <button
@@ -568,12 +568,6 @@ export const ArchivesAndCatalystPanel: React.FC<ArchivesAndCatalystProps> = ({
                 className="min-h-[40px] px-4 py-2 bg-sky-600 hover:bg-sky-500 text-slate-950 font-mono font-semibold text-xs rounded cursor-pointer whitespace-nowrap shrink-0"
               >
                 Verify &amp; Record Catalyst
-              </button>
-              <button
-                onClick={() => setPeerInputCode(sampleValidPeerCode)}
-                className="min-h-[40px] px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-mono text-xs rounded cursor-pointer whitespace-nowrap shrink-0"
-              >
-                Fill Valid Peer Code
               </button>
             </div>
             {peerFeedback && (

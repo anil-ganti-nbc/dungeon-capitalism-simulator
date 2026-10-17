@@ -28,6 +28,12 @@ import {
   generatePeerCatalystCode,
   verifyAndParseCatalystCode
 } from './simulation';
+import {
+  computeQuotation,
+  executeCommercialTransaction,
+  resolveConsumableWear,
+  computeRegionalFinesAndClaims
+} from './economyEngine';
 import { DeterministicRNG, hashString } from '../utils/prng';
 
 export type StrategyId =
@@ -1003,17 +1009,21 @@ export function runSingleCampaign(
       partyId: schedule.nextParty.id
     };
 
-    // Update Master & Party budgets, trust, and consumable wear
-    const autoResetSkill = hasSkill('auto_reset_cam');
+    // Update Master & Party budgets, trust, and consumable wear (A03: shared resolveConsumableWear)
+    const unlockedSkillKeys = state.skills.filter((s) => s.unlocked).map((s) => s.effectKey);
+    const wear = resolveConsumableWear(
+      activeParty,
+      activeMaster,
+      report.warrantyClaimsTriggered,
+      d,
+      unlockedSkillKeys
+    );
+
     state.masters = state.masters.map((m) => {
       if (m.id === activeMaster.id) {
-        const retainedHazards =
-          !autoResetSkill && d % 3 === 0 && m.installedHazards.length > 1
-            ? m.installedHazards.slice(0, -1)
-            : m.installedHazards;
         return {
           ...m,
-          installedHazards: retainedHazards,
+          installedHazards: wear.nextInstalled,
           budget: Math.max(450, m.budget + report.masterTreasuryDelta + 320)
         };
       }
@@ -1022,13 +1032,9 @@ export function runSingleCampaign(
 
     state.parties = state.parties.map((p) => {
       if (p.id === activeParty.id) {
-        const consumedLoadout =
-          (report.warrantyClaimsTriggered > 0 || d % 2 === 0) && p.equippedProducts.length > 1
-            ? p.equippedProducts.slice(0, -1)
-            : p.equippedProducts;
         return {
           ...p,
-          equippedProducts: consumedLoadout,
+          equippedProducts: wear.nextEquipped,
           budget: Math.max(420, p.budget + report.partyBudgetDelta + 290),
           trust: Math.max(15, p.trust - report.warrantyClaimsTriggered * 12)
         };

@@ -318,4 +318,11 @@ export interface GameSaveState {
   basiliskChainStage: number; // Tracks the emergent Basilisk Supply Chain story progression
   blackspireResolution: 'NONE' | 'HONEST_BROKER' | 'CARTEL_SYNDICATE' | 'PARTISAN_ARMOURER' | 'CALCULATED_CHAOS';
   insolvencyEvents?: number;
+  rulesVersion?: string;
+  tradeTerms?: {
+    priceMultiplier: number;
+    warrantyBacked: boolean;
+    exclusiveDeal: boolean;
+    secretProvenance: boolean;
+  };
 }

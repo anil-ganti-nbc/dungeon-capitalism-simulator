@@ -388,17 +388,41 @@ export function simulateRegionExpedition(
     let learnedByHeroes = '';
     let learnedByMaster = '';
 
-    // 1. Check Mass Bypass on Pressure Plate triggers
-    if (threshold >= 25 && effectiveMass < threshold && morphPotion) {
+    // 1. Check Mass Bypass / Mass-Inversion on Pressure Plate triggers
+    const isMassInversionPlate =
+      hazard.recipeComponents?.includes('part_trg_12') ||
+      hazard.id === 'prod_trp_1561f95a' ||
+      hazard.name.toLowerCase().includes('inversion');
+    const hasTemporalRewind =
+      hazard.recipeComponents?.includes('part_rst_09') ||
+      hazard.name.toLowerCase().includes('rewind');
+
+    if (isMassInversionPlate && effectiveMass < 25) {
+      // Inversion Plate triggers on abnormally light (<25kg) featherweight morphs!
+      outcome = 'TRAP_TRIGGERED';
+      damageDealt = Math.round(hazard.potency * 0.65) + rng.nextInt(12, 28);
+      lootSecured = rng.nextInt(30, 80);
+      chemicalReaction = `PARADOX MASS-INVERSION: Inversion sensor detected abnormally light ${effectiveMass}kg intruder (<25kg)! Gravitational polarity inverted and plate detonated!`;
+      if (hasTemporalRewind) {
+        chemicalReaction += ` [Temporal Rewind Loop: Restored mechanism to pristine state via closed timelike loop.]`;
+      }
+      causalExplanation = `${party.name} attempted a featherweight ${effectiveMass}kg morph bypass, but ${hazard.name} inverted gravitational polarity and detonated on the lightweight intruder!`;
+      learnedByHeroes = `Discovered ${hazard.name} inverts mass physics: featherweight morphs trigger the trap! Demanding anti-arcane disruption.`;
+      learnedByMaster = `${master.name}'s Paradox Mass-Inversion Plate successfully caught the featherweight intruders.`;
+      doubleSaleDemandCreated.push(`${party.name} seeks anti-arcane countermeasures against Mass Inversion`);
+    } else if (threshold >= 25 && effectiveMass < threshold && morphPotion && !isMassInversionPlate) {
       outcome = 'TRAP_BYPASSED';
       heroCounterUsed = morphPotion.name;
       chemicalReaction = `Mass Rule: ${vanguard.name} (${baseMass}kg) drank ${morphPotion.name} (${morphPotion.massEffectKg}kg) -> ${effectiveMass}kg < ${threshold}kg Plate Threshold!`;
+      if (hasTemporalRewind) {
+        chemicalReaction += ` [Temporal Rewind Loop: Mechanism re-cocked instantaneously via closed timelike loop.]`;
+      }
       damageDealt = 0;
       lootSecured = rng.nextInt(180, 310);
       causalExplanation = `${party.name} bypassed ${hazard.name} completely because their shrunken ${effectiveMass}kg mass failed to depress the ${threshold}kg pressure plate.`;
       learnedByHeroes = `Confirmed ${morphPotion.name} bypasses ${threshold}kg plates in ${master.name}'s dungeon.`;
-      learnedByMaster = `${master.name} furious that ${threshold}kg plates were bypassed by lightweight heroes; now demands <10kg Hair-Trigger Quartz traps!`;
-      doubleSaleDemandCreated.push(`${master.name} demands <10kg Hair-Trigger Traps to counter ${morphPotion.name}`);
+      learnedByMaster = `${master.name} furious that ${threshold}kg plates were bypassed by lightweight heroes; now demands <10kg Hair-Trigger Quartz traps or Mass-Inversion Plates!`;
+      doubleSaleDemandCreated.push(`${master.name} demands Mass-Inversion Plates to counter ${morphPotion.name}`);
     }
     // 2. Check Basilisk Petrification + Sulphur Fog Chemical Reaction (The Basilisk Supply Chain!)
     else if (hazard.causesPetrification) {
@@ -627,7 +651,7 @@ export function verifyAndParseCatalystCode(
   if (hashPart !== expectedSig) {
     return {
       valid: false,
-      error: `Provenance Signature Mismatch: Hash #${hashPart} failed cryptographic verification for sender ${sender} (Day ${dayStr}).`
+      error: `Format Checksum Mismatch: Hash #${hashPart} does not match the deterministic algorithm for sender ${sender} (Day ${dayStr}).`
     };
   }
 
@@ -642,12 +666,12 @@ export function verifyAndParseCatalystCode(
     valid: true,
     entry: {
       id: `cat_peer_d${currentDay}_${hashPart.toLowerCase()}`,
-      senderName: `Guild Envoy ${sender}`,
+      senderName: `Community Envoy ${sender}`,
       senderType: 'PEER_QR_EXCHANGE',
       provenanceHash: hashPart,
       dayReceived: currentDay,
-      commissionNote: `Offline Peer-to-Peer Catalyst Exchange verified via local provenance signature (${trimmed}).`,
-      isAuthentic: true
+      commissionNote: `Community merchant exchange code verified via format checksum (${trimmed}). Unauthenticated casual transfer.`,
+      isAuthentic: false
     }
   };
 }

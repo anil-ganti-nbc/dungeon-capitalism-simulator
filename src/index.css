@@ -27,6 +27,35 @@
   }
 }
 
+/* Accessible typography scaling (Codex A05) */
+html.font-scale-large, .font-scale-large {
+  font-size: 112%;
+}
+html.font-scale-xlarge, .font-scale-xlarge {
+  font-size: 125%;
+}
+
+.font-scale-large .text-xs, html.font-scale-large .text-xs {
+  font-size: 0.825rem !important;
+  line-height: 1.15rem !important;
+}
+.font-scale-large .text-sm, html.font-scale-large .text-sm {
+  font-size: 0.95rem !important;
+  line-height: 1.35rem !important;
+}
+.font-scale-xlarge .text-xs, html.font-scale-xlarge .text-xs {
+  font-size: 0.925rem !important;
+  line-height: 1.3rem !important;
+}
+.font-scale-xlarge .text-sm, html.font-scale-xlarge .text-sm {
+  font-size: 1.05rem !important;
+  line-height: 1.45rem !important;
+}
+.font-scale-xlarge .text-base, html.font-scale-xlarge .text-base {
+  font-size: 1.15rem !important;
+  line-height: 1.6rem !important;
+}
+
 /* Custom subtle scrollbars for ledger panels */
 ::-webkit-scrollbar {
   width: 6px;

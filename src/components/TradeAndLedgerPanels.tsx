@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   CraftedProduct,
   DungeonMaster,
@@ -9,9 +9,11 @@ import {
   RivalHouse
 } from '../types/game';
 import { REGIONS_DATA } from '../data/world';
+import { computeQuotation } from '../engine/economyEngine';
 
 interface TradeFloorProps {
   day: number;
+  seed: number;
   activeRegion: RegionId;
   products: CraftedProduct[];
   masters: DungeonMaster[];
@@ -23,6 +25,19 @@ interface TradeFloorProps {
   contractsToday: SaleContract[];
   bilateralSkillUnlocked: boolean;
   secretShippingUnlocked: boolean;
+  unlockedSkills?: string[];
+  tradeTerms?: {
+    priceMultiplier: number;
+    warrantyBacked: boolean;
+    exclusiveDeal: boolean;
+    secretProvenance: boolean;
+  };
+  onUpdateTradeTerms?: (terms: {
+    priceMultiplier: number;
+    warrantyBacked: boolean;
+    exclusiveDeal: boolean;
+    secretProvenance: boolean;
+  }) => void;
   onSelectScheduledMatchup: (masterId: string, partyId: string) => void;
   onExecuteSale: (
     buyerType: 'MASTER' | 'HERO',
@@ -38,6 +53,7 @@ interface TradeFloorProps {
 
 export const TradeFloorPanel: React.FC<TradeFloorProps> = ({
   day,
+  seed,
   activeRegion,
   products,
   masters,
@@ -49,6 +65,9 @@ export const TradeFloorPanel: React.FC<TradeFloorProps> = ({
   contractsToday,
   bilateralSkillUnlocked,
   secretShippingUnlocked,
+  unlockedSkills = [],
+  tradeTerms,
+  onUpdateTradeTerms,
   onSelectScheduledMatchup,
   onExecuteSale,
   onLaunchExpedition
@@ -56,10 +75,36 @@ export const TradeFloorPanel: React.FC<TradeFloorProps> = ({
   const regionMasters = masters.filter((m) => m.region === activeRegion);
   const regionParties = parties.filter((p) => p.region === activeRegion);
 
-  const [pricePct, setPricePct] = useState<number>(100);
-  const [warranty, setWarranty] = useState<boolean>(false);
-  const [exclusive, setExclusive] = useState<boolean>(false);
-  const [secretMark, setSecretMark] = useState<boolean>(secretShippingUnlocked);
+  // F08 Fix: Initialize from persisted tradeTerms in gameState so switching workspaces preserves settings!
+  const [pricePct, setPricePct] = useState<number>(() =>
+    tradeTerms?.priceMultiplier ? Math.round(tradeTerms.priceMultiplier * 100) : 100
+  );
+  const [warranty, setWarranty] = useState<boolean>(() =>
+    tradeTerms?.warrantyBacked !== undefined ? tradeTerms.warrantyBacked : false
+  );
+  const [exclusive, setExclusive] = useState<boolean>(() =>
+    tradeTerms?.exclusiveDeal !== undefined ? tradeTerms.exclusiveDeal : false
+  );
+  const [secretMark, setSecretMark] = useState<boolean>(() =>
+    tradeTerms?.secretProvenance !== undefined
+      ? tradeTerms.secretProvenance
+      : secretShippingUnlocked
+  );
+
+  const updateTerms = (newPrice: number, newWar: boolean, newEx: boolean, newSec: boolean) => {
+    setPricePct(newPrice);
+    setWarranty(newWar);
+    setExclusive(newEx);
+    setSecretMark(newSec);
+    if (onUpdateTradeTerms) {
+      onUpdateTradeTerms({
+        priceMultiplier: newPrice / 100,
+        warrantyBacked: newWar,
+        exclusiveDeal: newEx,
+        secretProvenance: newSec
+      });
+    }
+  };
 
   const activeMaster =
     regionMasters.find((m) => m.id === scheduledMasterId) || regionMasters[0] || masters[0];
@@ -129,7 +174,7 @@ export const TradeFloorPanel: React.FC<TradeFloorProps> = ({
             ].map((tier) => (
               <button
                 key={tier.val}
-                onClick={() => setPricePct(tier.val)}
+                onClick={() => updateTerms(tier.val, warranty, exclusive, secretMark)}
                 className={`min-h-[36px] px-2.5 py-1 rounded cursor-pointer whitespace-nowrap shrink-0 ${
                   pricePct === tier.val ? 'bg-amber-600 text-slate-950 font-semibold' : 'text-slate-400 hover:text-slate-200'
                 }`}
@@ -143,7 +188,7 @@ export const TradeFloorPanel: React.FC<TradeFloorProps> = ({
             <input
               type="checkbox"
               checked={warranty}
-              onChange={(e) => setWarranty(e.target.checked)}
+              onChange={(e) => updateTerms(pricePct, e.target.checked, exclusive, secretMark)}
               className="accent-amber-500"
             />
             <span>Warranty (+12% Price, Refund on Failure)</span>
@@ -153,7 +198,7 @@ export const TradeFloorPanel: React.FC<TradeFloorProps> = ({
             <input
               type="checkbox"
               checked={exclusive}
-              onChange={(e) => setExclusive(e.target.checked)}
+              onChange={(e) => updateTerms(pricePct, warranty, e.target.checked, secretMark)}
               className="accent-amber-500"
             />
             <span>Exclusivity (+25% Price)</span>
@@ -163,7 +208,7 @@ export const TradeFloorPanel: React.FC<TradeFloorProps> = ({
             <input
               type="checkbox"
               checked={secretMark}
-              onChange={(e) => setSecretMark(e.target.checked)}
+              onChange={(e) => updateTerms(pricePct, warranty, exclusive, e.target.checked)}
               className="accent-emerald-500"
             />
             <span>Null-Wax Secret Provenance (-35g Fee)</span>
@@ -239,11 +284,18 @@ export const TradeFloorPanel: React.FC<TradeFloorProps> = ({
                 </div>
               ) : (
                 masterProducts.map((prod) => {
-                  const askPrice = Math.max(
-                    25,
-                    Math.round(prod.suggestedPrice * effectiveMultiplier) - (secretMark ? 35 : 0)
-                  );
-                  const canAfford = activeMaster.budget >= askPrice;
+                  const quote = computeQuotation(prod, activeMaster, 'MASTER', {
+                    priceMultiplier: pricePct / 100,
+                    warrantyBacked: warranty,
+                    exclusiveDeal: exclusive,
+                    secretProvenance: secretMark,
+                    day,
+                    seed,
+                    unlockedSkills
+                  });
+                  const askPrice = quote.unitPrice;
+                  const canAfford = quote.canAfford;
+                  const acceptable = quote.acceptable;
                   const sigLabel = prod.formulaSignature || prod.id.slice(-6).toUpperCase();
                   return (
                     <div
@@ -262,6 +314,11 @@ export const TradeFloorPanel: React.FC<TradeFloorProps> = ({
                         <div className="text-[11px] text-slate-400 mt-0.5 truncate">
                           {prod.reactionNotes[0]}
                         </div>
+                        {!acceptable && quote.refusalReason && (
+                          <div className="text-[11px] font-mono text-rose-400 mt-1">
+                            ⚠ {quote.refusalReason}
+                          </div>
+                        )}
                       </div>
                       <button
                         onClick={() =>
@@ -269,16 +326,17 @@ export const TradeFloorPanel: React.FC<TradeFloorProps> = ({
                             'MASTER',
                             activeMaster.id,
                             prod,
-                            effectiveMultiplier,
+                            pricePct / 100,
                             warranty,
                             exclusive,
                             secretMark
                           )
                         }
-                        disabled={!canAfford}
+                        disabled={!acceptable}
+                        title={quote.refusalReason || `Expected Trust: ${quote.expectedTrustDelta >= 0 ? '+' : ''}${quote.expectedTrustDelta}`}
                         className="min-h-[40px] px-3.5 py-2 bg-rose-600 hover:bg-rose-500 disabled:bg-slate-800 disabled:text-slate-500 text-white text-xs font-mono font-semibold rounded-lg cursor-pointer whitespace-nowrap shrink-0 tabular-nums"
                       >
-                        Sell ({askPrice}g)
+                        {quote.boycotting ? 'Boycott' : !canAfford ? 'No Budget' : `Sell (${askPrice}g)`}
                       </button>
                     </div>
                   );
@@ -356,11 +414,18 @@ export const TradeFloorPanel: React.FC<TradeFloorProps> = ({
                 </div>
               ) : (
                 heroProducts.map((prod) => {
-                  const askPrice = Math.max(
-                    25,
-                    Math.round(prod.suggestedPrice * effectiveMultiplier) - (secretMark ? 35 : 0)
-                  );
-                  const canAfford = activeParty.budget >= askPrice;
+                  const quote = computeQuotation(prod, activeParty, 'HERO', {
+                    priceMultiplier: pricePct / 100,
+                    warrantyBacked: warranty,
+                    exclusiveDeal: exclusive,
+                    secretProvenance: secretMark,
+                    day,
+                    seed,
+                    unlockedSkills
+                  });
+                  const askPrice = quote.unitPrice;
+                  const canAfford = quote.canAfford;
+                  const acceptable = quote.acceptable;
                   const sigLabel = prod.formulaSignature || prod.id.slice(-6).toUpperCase();
                   return (
                     <div
@@ -380,6 +445,11 @@ export const TradeFloorPanel: React.FC<TradeFloorProps> = ({
                         <div className="text-[11px] text-slate-400 mt-0.5 truncate">
                           {prod.reactionNotes[0]}
                         </div>
+                        {!acceptable && quote.refusalReason && (
+                          <div className="text-[11px] font-mono text-rose-400 mt-1">
+                            ⚠ {quote.refusalReason}
+                          </div>
+                        )}
                       </div>
                       <button
                         onClick={() =>
@@ -387,16 +457,17 @@ export const TradeFloorPanel: React.FC<TradeFloorProps> = ({
                             'HERO',
                             activeParty.id,
                             prod,
-                            effectiveMultiplier,
+                            pricePct / 100,
                             warranty,
                             exclusive,
                             secretMark
                           )
                         }
-                        disabled={!canAfford}
+                        disabled={!acceptable}
+                        title={quote.refusalReason || `Expected Trust: ${quote.expectedTrustDelta >= 0 ? '+' : ''}${quote.expectedTrustDelta}`}
                         className="min-h-[40px] px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 text-xs font-mono font-semibold rounded-lg cursor-pointer whitespace-nowrap shrink-0 tabular-nums"
                       >
-                        Sell ({askPrice}g)
+                        {quote.boycotting ? 'Boycott' : !canAfford ? 'No Budget' : `Sell (${askPrice}g)`}
                       </button>
                     </div>
                   );

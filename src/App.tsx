@@ -45,114 +45,20 @@ import {
   ArchivesAndCatalystPanel
 } from './components/WorldAndIntelPanels';
 import { PWAInstallButton, OfflineIndicator } from './components/PWAInstallWidgets';
-
-const SAVE_STORAGE_KEY = 'trap_and_tonic_save_v2';
-const SAVE_BACKUP_KEY = 'trap_and_tonic_backup_v2';
-const LEGACY_SAVE_KEY = 'trap_and_tonic_save_v1';
-
-function buildInitialScheduledMatchups(): Record<RegionId, ScheduledMatchup> {
-  const result = {} as Record<RegionId, ScheduledMatchup>;
-  (['cellar', 'warrens', 'blackspire', 'vault'] as const).forEach((reg) => {
-    const m = INITIAL_MASTERS.find((x) => x.region === reg) || INITIAL_MASTERS[0];
-    const p = INITIAL_PARTIES.find((x) => x.region === reg) || INITIAL_PARTIES[0];
-    result[reg] = { masterId: m.id, partyId: p.id };
-  });
-  return result;
-}
-
-function createInitialSaveState(): GameSaveState {
-  const initReagents: Record<string, number> = {};
-  REAGENTS_CATALOG.slice(0, 20).forEach((r) => {
-    initReagents[r.id] = 3;
-  });
-  const initParts: Record<string, number> = {};
-  TRAP_PARTS_CATALOG.slice(0, 20).forEach((p) => {
-    initParts[p.id] = 2;
-  });
-
-  const canonicalInitialProducts: CraftedProduct[] = INITIAL_PRODUCTS.map((p) => {
-    const kind = p.category === 'TRAP_MASTER' || p.category === 'HAZARD_MONSTER' ? 'trp' : 'alc';
-    const sig = computeCanonicalFormulaSignature(kind, p.recipeComponents, [], SIM_RULES_VERSION);
-    return {
-      ...p,
-      formulaSignature: sig,
-      rulesVersion: SIM_RULES_VERSION,
-      appliedSkills: []
-    };
-  });
-
-  return {
-    version: '2.0.0-sim002',
-    seed: 20261017,
-    day: 1,
-    phase: 'MORNING',
-    activeRegion: 'cellar',
-    unlockedRegions: ['cellar'],
-    gold: 1850,
-    debt: 0,
-    skillPoints: 2,
-    customBrewsCount: 0,
-    customTrapsCount: 0,
-    scheduledMatchups: buildInitialScheduledMatchups(),
-    reagentInventory: initReagents,
-    partInventory: initParts,
-    products: canonicalInitialProducts,
-    masters: INITIAL_MASTERS.map((m) => ({
-      ...m,
-      memoryLog: [...m.memoryLog],
-      installedHazards: [...m.installedHazards]
-    })),
-    parties: INITIAL_PARTIES.map((p) => ({
-      ...p,
-      members: p.members.map((mem) => ({ ...mem })),
-      observedTraps: [...p.observedTraps],
-      equippedProducts: [...p.equippedProducts],
-      memoryLog: [...p.memoryLog]
-    })),
-    rivals: INITIAL_RIVALS.map((r) => ({ ...r })),
-    contractsToday: [],
-    contractHistory: [],
-    intelFeed: INITIAL_INTEL_FEED.map((i) => ({ ...i })),
-    expeditionReports: [],
-    financialLedger: [
-      {
-        day: 0,
-        grossRevenue: 0,
-        cogs: 0,
-        grossMargin: 0,
-        overheadAndStorage: 0,
-        warrantyAndClaims: 0,
-        finesAndBribes: 0,
-        financingInterest: 0,
-        netProfit: 0,
-        endingCash: 1850,
-        inventoryValue: 1420,
-        debt: 0,
-        netWorth: 3270
-      }
-    ],
-    catalystLedger: [],
-    expertUnlocked: false,
-    skills: SKILL_TREE_NODES.map((s) => ({ ...s })),
-    basiliskChainStage: 1,
-    blackspireResolution: 'NONE',
-    insolvencyEvents: 0
-  };
-}
-
-function normalizeLoadedSave(parsed: Partial<GameSaveState>): GameSaveState {
-  const base = createInitialSaveState();
-  return {
-    ...base,
-    ...parsed,
-    customBrewsCount: typeof parsed.customBrewsCount === 'number' ? parsed.customBrewsCount : 0,
-    customTrapsCount: typeof parsed.customTrapsCount === 'number' ? parsed.customTrapsCount : 0,
-    scheduledMatchups: {
-      ...base.scheduledMatchups,
-      ...(parsed.scheduledMatchups || {})
-    }
-  };
-}
+import {
+  createInitialSaveState,
+  normalizeLoadedSave,
+  loadGameWithRecovery,
+  persistAtomicSaveSafe,
+  SAVE_STORAGE_KEY,
+  SAVE_BACKUP_KEY,
+  LEGACY_SAVE_KEY
+} from './engine/saveManager';
+import {
+  executeCommercialTransaction,
+  computeRegionalFinesAndClaims,
+  resolveConsumableWear
+} from './engine/economyEngine';
 
 const WORKSPACE_NAV_ITEMS: Array<{ id: WorkspaceTab; label: string; shortLabel: string }> = [
   { id: 'DAY_DESK', label: 'Bilateral Desk', shortLabel: 'Trade' },
@@ -184,39 +90,27 @@ export default function App() {
   });
 
   const [gameState, setGameState] = useState<GameSaveState>(() => {
-    try {
-      const raw =
-        localStorage.getItem(SAVE_STORAGE_KEY) ||
-        localStorage.getItem(SAVE_BACKUP_KEY) ||
-        localStorage.getItem(LEGACY_SAVE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as Partial<GameSaveState>;
-        if (parsed && typeof parsed.day === 'number' && Array.isArray(parsed.products)) {
-          return normalizeLoadedSave(parsed);
-        }
-      }
-    } catch {
-      // Fallback to fresh save
-    }
-    return createInitialSaveState();
+    return loadGameWithRecovery(localStorage).state;
   });
 
-  // Atomic save rotation on state update & app lifecycle interruption (F08)
+  // Atomic save rotation on state update & app lifecycle interruption (F08, A02)
   const persistAtomicSave = useCallback((stateToSave: GameSaveState) => {
-    try {
-      const prev = localStorage.getItem(SAVE_STORAGE_KEY);
-      if (prev) {
-        localStorage.setItem(SAVE_BACKUP_KEY, prev);
-      }
-      localStorage.setItem(SAVE_STORAGE_KEY, JSON.stringify(stateToSave));
-    } catch {
-      // Ignore storage quota errors in restricted sandboxes
-    }
+    persistAtomicSaveSafe(stateToSave, localStorage);
   }, []);
 
   useEffect(() => {
     persistAtomicSave(gameState);
   }, [gameState, persistAtomicSave]);
+
+  // Accessible typography scaling on document element (Codex A05)
+  useEffect(() => {
+    document.documentElement.classList.remove('font-scale-large', 'font-scale-xlarge');
+    if (a11y.fontScale === 'large') {
+      document.documentElement.classList.add('font-scale-large');
+    } else if (a11y.fontScale === 'xlarge') {
+      document.documentElement.classList.add('font-scale-xlarge');
+    }
+  }, [a11y.fontScale]);
 
   useEffect(() => {
     const onVisibilityChange = () => {
@@ -397,6 +291,7 @@ export default function App() {
   }, []);
 
   // Execute Bilateral Sale to either Dungeon Master or Adventuring Party
+  // Execute Bilateral Sale to either Dungeon Master or Adventuring Party (A01: Shared Authoritative Economy Engine)
   const handleExecuteSale = useCallback(
     (
       buyerType: 'MASTER' | 'HERO',
@@ -407,72 +302,25 @@ export default function App() {
       exclusiveDeal: boolean,
       secretProvenance: boolean
     ) => {
-      soundFX.playCoin();
-      const unitPrice = Math.max(
-        25,
-        Math.round(product.suggestedPrice * priceMultiplier) - (secretProvenance ? 35 : 0)
-      );
-
       setGameState((prev) => {
-        const buyerName =
-          buyerType === 'MASTER'
-            ? prev.masters.find((m) => m.id === buyerId)?.name || 'Master'
-            : prev.parties.find((p) => p.id === buyerId)?.name || 'Party';
-
-        const contractSeq = prev.contractHistory.length + 1;
-        const newContract: SaleContract = {
-          id: `cnt_d${prev.day}_n${contractSeq}_${product.id}`,
-          day: prev.day,
-          buyerType,
-          buyerId,
-          buyerName,
-          productId: product.id,
-          productName: product.name,
-          quantity: 1,
-          unitPrice,
-          totalRevenue: unitPrice,
-          unitCost: product.productionCost,
+        const tx = executeCommercialTransaction(prev, buyerType, buyerId, product, {
+          priceMultiplier,
           warrantyBacked,
           exclusiveDeal,
-          secretProvenance,
-          creditFinanced: false
-        };
+          secretProvenance
+        });
 
-        const nextProducts = prev.products.map((p) =>
-          p.id === product.id ? { ...p, stock: Math.max(0, p.stock - 1) } : p
+        if (!tx.success || !tx.nextState) {
+          setStatusBanner(tx.reason || 'Transaction could not be completed.');
+          return prev;
+        }
+
+        soundFX.playCoin();
+        setStatusBanner(
+          `Sold 1x ${product.name} [#${product.formulaSignature || product.id.slice(-6)}] to ${
+            tx.contract?.buyerName || (buyerType === 'MASTER' ? 'Dungeon Master' : 'Adventuring Party')
+          } for +${tx.unitPrice}g!`
         );
-
-        const nextMasters = prev.masters.map((m) => {
-          if (buyerType === 'MASTER' && m.id === buyerId) {
-            return {
-              ...m,
-              budget: Math.max(0, m.budget - unitPrice),
-              trust: Math.min(100, m.trust + (warrantyBacked ? 5 : 2)),
-              installedHazards: Array.from(new Set([product.id, ...m.installedHazards])).slice(0, 3),
-              memoryLog: [
-                ...m.memoryLog,
-                `Day ${prev.day}: Bought ${product.name} [#${product.formulaSignature || product.id.slice(-6)}] for ${unitPrice}g.`
-              ]
-            };
-          }
-          return m;
-        });
-
-        const nextParties = prev.parties.map((p) => {
-          if (buyerType === 'HERO' && p.id === buyerId) {
-            return {
-              ...p,
-              budget: Math.max(0, p.budget - unitPrice),
-              trust: Math.min(100, p.trust + (warrantyBacked ? 6 : 3)),
-              equippedProducts: Array.from(new Set([product.id, ...p.equippedProducts])).slice(0, 3),
-              memoryLog: [
-                ...p.memoryLog,
-                `Day ${prev.day}: Bought ${product.name} [#${product.formulaSignature || product.id.slice(-6)}] for ${unitPrice}g.`
-              ]
-            };
-          }
-          return p;
-        });
 
         // Also ensure buyer is set in scheduledMatchups for their region
         const currentSched = prev.scheduledMatchups[prev.activeRegion] || {
@@ -485,26 +333,14 @@ export default function App() {
             : { ...currentSched, partyId: buyerId };
 
         return {
-          ...prev,
+          ...tx.nextState,
           phase: 'TRADE',
-          gold: prev.gold + unitPrice,
-          products: nextProducts,
-          masters: nextMasters,
-          parties: nextParties,
           scheduledMatchups: {
-            ...prev.scheduledMatchups,
+            ...tx.nextState.scheduledMatchups,
             [prev.activeRegion]: updatedRegionSched
-          },
-          contractsToday: [...prev.contractsToday, newContract],
-          contractHistory: [...prev.contractHistory, newContract]
+          }
         };
       });
-
-      setStatusBanner(
-        `Sold 1x ${product.name} [#${product.formulaSignature || product.id.slice(-6)}] to ${
-          buyerType === 'MASTER' ? 'Dungeon Master' : 'Adventuring Party'
-        } for +${unitPrice}g!`
-      );
     },
     []
   );
@@ -537,11 +373,15 @@ export default function App() {
       const grossMargin = grossRevenue - cogs;
       const overheadAndStorage = 35 + prev.unlockedRegions.length * 20;
 
-      const hasWarrantyShield = prev.skills.some((s) => s.effectKey === 'warranty_shield' && s.unlocked);
-      const warrantyClaims = Math.round(
-        report.warrantyClaimsTriggered * 165 * (hasWarrantyShield ? 0.6 : 1)
+      const skillKeys = prev.skills.filter((s) => s.unlocked).map((s) => s.effectKey);
+      const claimsAndFines = computeRegionalFinesAndClaims(
+        prev.activeRegion,
+        report.exclusivityBreachDetected,
+        report.warrantyClaimsTriggered,
+        skillKeys
       );
-      const fines = report.exclusivityBreachDetected ? 240 : 0;
+      const warrantyClaims = claimsAndFines.warrantyPayout;
+      const fines = claimsAndFines.breachFine;
 
       const cheapCredit = prev.skills.some((s) => s.effectKey === 'cheap_credit' && s.unlocked);
       const dailyInterestRate = cheapCredit ? 0.003 : 0.005;
@@ -571,20 +411,22 @@ export default function App() {
       const inventoryVal = prev.products.reduce((acc, p) => acc + p.stock * p.productionCost, 0);
       const netWorth = endingCash + inventoryVal - nextDebt;
 
-      // Update Master & Party memory + budgets + consumable wear from expedition outcome
-      const autoResetSkill = prev.skills.some((s) => s.effectKey === 'auto_reset_cam' && s.unlocked);
+      // Update Master & Party memory + budgets + consumable wear from shared economyEngine (A03)
+      const wear = resolveConsumableWear(
+        party,
+        master,
+        report.warrantyClaimsTriggered,
+        prev.day,
+        skillKeys
+      );
+
       const nextMasters = prev.masters.map((m) => {
         if (m.id === master.id) {
           const lastRoom = report.rooms[report.rooms.length - 1];
-          // Deplete oldest trap every 3 delves unless auto-reset skill is unlocked
-          const retainedHazards =
-            !autoResetSkill && prev.day % 3 === 0 && m.installedHazards.length > 1
-              ? m.installedHazards.slice(0, -1)
-              : m.installedHazards;
           return {
             ...m,
             budget: Math.max(450, m.budget + report.masterTreasuryDelta + 320),
-            installedHazards: retainedHazards,
+            installedHazards: wear.nextInstalled,
             memoryLog: [...m.memoryLog, `Day ${prev.day} After-Action: ${lastRoom.learnedByMaster}`],
             desiredTrait: report.doubleSaleDemandCreated[0] || m.desiredTrait
           };
@@ -595,16 +437,11 @@ export default function App() {
       const nextParties = prev.parties.map((p) => {
         if (p.id === party.id) {
           const lastRoom = report.rooms[report.rooms.length - 1];
-          // Consume oldest potion charge after expedition if >1 equipped or on reaction failure
-          const consumedLoadout =
-            (report.warrantyClaimsTriggered > 0 || prev.day % 2 === 0) && p.equippedProducts.length > 1
-              ? p.equippedProducts.slice(0, -1)
-              : p.equippedProducts;
           return {
             ...p,
             budget: Math.max(420, p.budget + report.partyBudgetDelta + 290),
             trust: Math.max(15, p.trust - report.warrantyClaimsTriggered * 12),
-            equippedProducts: consumedLoadout,
+            equippedProducts: wear.nextEquipped,
             memoryLog: [...p.memoryLog, `Day ${prev.day} After-Action: ${lastRoom.learnedByHeroes}`],
             desiredCounter:
               report.doubleSaleDemandCreated.find((d) => d.includes(p.name)) || p.desiredCounter
@@ -1130,6 +967,7 @@ export default function App() {
         {activeTab === 'DAY_DESK' && (
           <TradeFloorPanel
             day={gameState.day}
+            seed={gameState.seed}
             activeRegion={gameState.activeRegion}
             products={gameState.products}
             masters={gameState.masters}
@@ -1141,6 +979,14 @@ export default function App() {
             contractsToday={gameState.contractsToday}
             bilateralSkillUnlocked={isSkillUnlocked('bilateral_margin')}
             secretShippingUnlocked={isSkillUnlocked('secret_shipping')}
+            unlockedSkills={gameState.skills.filter((s) => s.unlocked).map((s) => s.effectKey)}
+            tradeTerms={gameState.tradeTerms}
+            onUpdateTradeTerms={(terms) =>
+              setGameState((prev) => ({
+                ...prev,
+                tradeTerms: terms
+              }))
+            }
             onSelectScheduledMatchup={handleSelectScheduledMatchup}
             onExecuteSale={handleExecuteSale}
             onLaunchExpedition={handleLaunchExpedition}
