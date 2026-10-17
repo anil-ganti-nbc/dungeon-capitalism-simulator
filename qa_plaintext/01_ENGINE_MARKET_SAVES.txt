@@ -1,0 +1,1144 @@
+TRAP & TONIC / SIM-002B EXACT PINNED SOURCE / GATE A: TYPES, MARKET, PURCHASES, RECOVERY
+Candidate: 6722ac6edd8ed37633db56804517c859a58829df
+Base: c45f33e143f71acd7a66edacf773161fb4b9416f
+PR #4 https://github.com/anil-ganti-nbc/dungeon-capitalism-simulator/pull/4
+This contains ORIGINAL UTF-8 GitHub source from the pinned commit. Review-only export; no runtime execution implied.
+
+==== BEGIN FILE src/types/game.ts BLOB d3ce957949425eefed60822aee6382e7a20d2dc3 ====
+export type GameShellState = 'TITLE_MENU' | 'PLAYING' | 'PAUSED' | 'VICTORY_MODAL' | 'GAME_OVER';
+
+export type DayPhase = 'MORNING' | 'PREPARATION' | 'TRADE' | 'EXPEDITIONS' | 'EVENING';
+
+export type RegionId = 'cellar' | 'warrens' | 'blackspire' | 'vault';
+
+export type DifficultyTier = 'Easy' | 'Normal' | 'Hard' | 'Expert';
+
+export type WorkspaceTab =
+  | 'DAY_DESK'
+  | 'ALCHEMY_LAB'
+  | 'TRAP_WORKSHOP'
+  | 'TRADE_FLOOR'
+  | 'EXPEDITION_MAP'
+  | 'INTEL_RUMOURS'
+  | 'CLIENT_LEDGER'
+  | 'FINANCIALS'
+  | 'SPECIALISATIONS'
+  | 'ARCHIVES_CATALYST';
+
+export type ReagentSlotRole = 'base' | 'active' | 'carrier' | 'stabiliser' | 'catalyst';
+
+export interface ReagentTraits {
+  toxicity: number;          // 0-100
+  volatility: number;        // 0-100
+  acidity: number;           // 0-100
+  heatAffinity: number;      // -50 to +100
+  antiMagic: number;         // 0-100
+  potency: number;           // 0-100
+  stability: number;         // 0-100
+  duration: number;          // 1-10 rooms
+  massDeltaKg: number;       // e.g. -65kg for Avian Shrinking / Chicken Morph
+  contamination: number;     // 0-100
+  sulphurSensitivity: number;// 0-100 (high means degrades in Sulphur Fog unless stabilised)
+  perishability: number;     // 0-100 (% chance to lose grade per day without cold storage)
+}
+
+export interface Reagent {
+  id: string;
+  name: string;
+  role: ReagentSlotRole;
+  regionOrigin: RegionId;
+  baseCost: number;
+  grade: 'Crude' | 'Standard' | 'Refined' | 'Sublime';
+  description: string;
+  traits: ReagentTraits;
+  tags: string[];
+}
+
+export type TrapSlotRole = 'trigger' | 'concealment' | 'delivery' | 'payload' | 'power' | 'reset';
+
+export type CounterClass =
+  | 'detection'
+  | 'disruption'
+  | 'resistance'
+  | 'bypass_mass'
+  | 'sabotage'
+  | 'routing'
+  | 'filtration';
+
+export interface TrapPart {
+  id: string;
+  name: string;
+  role: TrapSlotRole;
+  regionTier: RegionId;
+  baseCost: number;
+  maintenanceCost: number;
+  massThresholdKg?: number; // For triggers (e.g. 45kg pressure plate, 5kg hair-trigger)
+  detectionDC: number;      // 10-95
+  lethality: number;        // 0-100
+  deterrence: number;       // 0-100
+  damageType: 'physical' | 'poison' | 'acid' | 'petrification' | 'sulphur_fog' | 'arcane' | 'corrosive';
+  counterplayRoutes: CounterClass[];
+  description: string;
+}
+
+export type ProductCategory = 'TONIC_HERO' | 'COUNTER_GEAR' | 'TRAP_MASTER' | 'HAZARD_MONSTER' | 'DUAL_SOLVENT';
+
+export interface CraftedProduct {
+  id: string;                    // Canonical deterministic build ID based on composition + skills + rulesVersion
+  formulaSignature?: string;     // Short 8-char canonical hex signature of composition + skills + rules
+  rulesVersion?: string;         // e.g. 'v2.0-sim002'
+  name: string;
+  category: ProductCategory;
+  targetAudience: 'HERO' | 'MASTER' | 'BOTH';
+  productionCost: number;
+  suggestedPrice: number;
+  stock: number;
+  potency: number;
+  stability: number;
+  reliability: number;
+  massEffectKg: number;          // e.g. -65kg shrinks heroes below pressure plate threshold
+  sulphurVulnerable: boolean;    // True if high sulphurSensitivity and low stabiliser
+  emitsSulphurFog: boolean;      // True if creates sulphur atmosphere in dungeon
+  causesPetrification: boolean;  // True for Basilisk / Gorgon hazards
+  curesPetrification: boolean;   // True for Basilisk Antidote
+  filtersSulphur: boolean;       // True for Alchemical Breather Mask / Scrubbing Tonic
+  triggerMassThresholdKg: number;// If trap, mass needed to trigger
+  detectionDC: number;
+  damageType: string;
+  counterClasses: CounterClass[];
+  recipeComponents: string[];    // IDs of reagents or trap parts in slot order
+  appliedSkills?: string[];      // Applicable skill flags present at synthesis/assembly
+  description: string;
+  reactionNotes: string[];
+}
+
+export interface DungeonMaster {
+  id: string;
+  name: string;
+  title: string;
+  region: RegionId;
+  personality: string;
+  secretive: boolean;
+  budget: number;
+  deterrenceScore: number;   // 0-100
+  prestigeScore: number;     // 0-100
+  visitorTraffic: number;    // 0-100 (too lethal = 0 traffic; too easy = looted treasury)
+  trust: number;             // 0-100
+  knownHeroCounters: string[];
+  installedResetCharges?: number[]; // Slot-aligned, paid temporal rewinds remaining (0 or 1).
+  installedHazards: string[]; // Canonical Product IDs
+  memoryLog: string[];
+  desiredTrait: string;
+  catalystCommissionStage: number; // 0 = not started, 1 = phase 1, 2 = phase 2, 3 = sent catalyst
+}
+
+export interface HeroMember {
+  name: string;
+  role: 'Vanguard' | 'Alchemist' | 'Scout' | 'Arcanist';
+  hp: number;
+  maxHp: number;
+  massKg: number;
+  status: 'Healthy' | 'Petrified' | 'Poisoned' | 'Recovering';
+}
+
+export interface AdventuringParty {
+  id: string;
+  name: string;
+  region: RegionId;
+  motto: string;
+  ethics: 'Chivalrous' | 'Pragmatic' | 'Mercenary' | 'Puritan';
+  budget: number;
+  reputation: number;        // 0-100
+  trust: number;             // 0-100
+  caution: number;           // 0-100
+  members: HeroMember[];
+  observedTraps: string[];   // Trap/Hazard IDs they have learned to counter
+  equippedProducts: string[];// Canonical Product IDs bought from player or rivals
+  memoryLog: string[];
+  desiredCounter: string;
+}
+
+export interface RivalHouse {
+  id: string;
+  name: string;
+  specialty: string;
+  regionFocus: RegionId;
+  aggressiveness: number;
+  priceUndercutPct: number;
+  marketShare: number;
+  signatureProduct: string;
+  lastAction: string;
+}
+
+export interface MarketFactOrRumour {
+  id: string;
+  day: number;
+  timestamp: string;
+  region: RegionId;
+  isVerifiedFact: boolean; // True = Verified Ledger Fact, False = Unconfirmed Rumour
+  source: string;
+  reliabilityPct: number;
+  headline: string;
+  detail: string;
+  affectedTag: string;
+  resolved?: boolean;
+}
+
+export interface DailyMarketContext {
+  version: 'market-v1';
+  rulesVersion: string;
+  seed: number;
+  day: number;
+  region: RegionId;
+  factor: number;
+}
+
+export interface SaleContract {
+  marketContext?: DailyMarketContext;
+  id: string;
+  day: number;
+  buyerType: 'MASTER' | 'HERO';
+  buyerId: string;
+  buyerName: string;
+  productId: string;
+  productName: string;
+  quantity: number;
+  unitPrice: number;
+  totalRevenue: number;
+  unitCost: number;
+  warrantyBacked: boolean;   // Refunds buyer if item fails due to reaction/counter
+  exclusiveDeal: boolean;    // Promises not to sell direct counter on same day
+  secretProvenance: boolean; // Hides seller mark in Blackspire/Vault
+  creditFinanced: boolean;   // Collects 115% next day
+}
+
+export interface ExpeditionRoomEvent {
+  roomIndex: number;
+  roomName: string;
+  hazardName: string;
+  hazardId: string;
+  triggerType: string;
+  triggerMassThresholdKg: number;
+  heroEffectiveMassKg: number;
+  heroCounterUsed: string | null;
+  chemicalReaction: string | null; // e.g., "Sulphur Fog degraded unstabilised Basilisk Antidote (-55% potency)!"
+  outcome: 'TRAP_TRIGGERED' | 'TRAP_BYPASSED' | 'COUNTER_SUCCEEDED' | 'REACTION_FAILURE' | 'MONSTER_CLASH';
+  damageDealt: number;
+  lootSecured: number;
+  casualtyName: string | null;
+  causalExplanation: string;
+  learnedByHeroes: string;
+  learnedByMaster: string;
+}
+
+export interface ExpeditionReport {
+  id: string;
+  day: number;
+  seed: number;
+  rulesVersion: string;
+  region: RegionId;
+  masterId: string;
+  masterName: string;
+  partyId: string;
+  partyName: string;
+  masterSupplies: string[];
+  heroSupplies: string[];
+  masterSupplyIds?: string[];
+  heroSupplyIds?: string[];
+  rooms: ExpeditionRoomEvent[];
+  totalLooted: number;
+  masterTreasuryDelta: number;
+  partyBudgetDelta: number;
+  warrantyClaimsTriggered: number;
+  exclusivityBreachDetected: boolean;
+  doubleSaleDemandCreated: string[];
+  summaryHeadline: string;
+}
+
+export interface FinancialRecord {
+  marketContext?: DailyMarketContext;
+  day: number;
+  grossRevenue: number;
+  cogs: number;
+  grossMargin: number;
+  overheadAndStorage: number;
+  warrantyAndClaims: number;
+  finesAndBribes: number;
+  financingInterest: number;
+  netProfit: number;
+  endingCash: number;
+  inventoryValue: number;
+  debt: number;
+  netWorth: number;
+}
+
+export interface ParadoxCatalystEntry {
+  id: string;
+  senderName: string;
+  senderType: 'SOLO_DM_COURIER' | 'PEER_QR_EXCHANGE';
+  provenanceHash: string;
+  dayReceived: number;
+  commissionNote: string;
+  isAuthentic: boolean;
+}
+
+export interface SkillNode {
+  id: string;
+  branch: 'Alchemy' | 'Engineering' | 'Commerce' | 'Intelligence';
+  name: string;
+  tier: 1 | 2 | 3;
+  costPoints: number;
+  unlocked: boolean;
+  description: string;
+  effectKey: string;
+}
+
+export interface AccessibilitySettings {
+  fontScale: 'normal' | 'large' | 'xlarge';
+  colorblindLabels: boolean;
+  reducedMotion: boolean;
+  oneThumbPortraitMode: boolean;
+  simSpeed: 1 | 2 | 4;
+  audioMuted: boolean;
+}
+
+export interface ScheduledMatchup {
+  masterId: string;
+  partyId: string;
+}
+
+export interface GameSaveState {
+  version: string;
+  seed: number;
+  day: number;
+  phase: DayPhase;
+  activeRegion: RegionId;
+  unlockedRegions: RegionId[];
+  gold: number;
+  debt: number;
+  skillPoints: number;
+  customBrewsCount: number;
+  customTrapsCount: number;
+  scheduledMatchups: Record<RegionId, ScheduledMatchup>;
+  reagentInventory: Record<string, number>;
+  partInventory: Record<string, number>;
+  products: CraftedProduct[];
+  masters: DungeonMaster[];
+  parties: AdventuringParty[];
+  rivals: RivalHouse[];
+  contractsToday: SaleContract[];
+  contractHistory: SaleContract[];
+  intelFeed: MarketFactOrRumour[];
+  expeditionReports: ExpeditionReport[];
+  financialLedger: FinancialRecord[];
+  catalystLedger: ParadoxCatalystEntry[];
+  expertUnlocked: boolean;
+  skills: SkillNode[];
+  basiliskChainStage: number; // Tracks the emergent Basilisk Supply Chain story progression
+  blackspireResolution: 'NONE' | 'HONEST_BROKER' | 'CARTEL_SYNDICATE' | 'PARTISAN_ARMOURER' | 'CALCULATED_CHAOS';
+  insolvencyEvents?: number;
+  rulesVersion?: string;
+  tradeTerms?: {
+    priceMultiplier: number;
+    warrantyBacked: boolean;
+    exclusiveDeal: boolean;
+    secretProvenance: boolean;
+  };
+}
+
+==== END FILE src/types/game.ts ====
+
+==== BEGIN FILE src/utils/prng.ts BLOB bfb4907710672a3411e4481ccfee3cbb5ee8bbbe ====
+// Deterministic Mulberry32 PRNG for auditable expedition replays and market streams
+export class DeterministicRNG {
+  private state: number;
+
+  constructor(seed: number) {
+    this.state = seed >>> 0;
+  }
+
+  public next(): number {
+    let t = (this.state += 0x6d2b79f5);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  }
+
+  public nextInt(min: number, max: number): number {
+    return Math.floor(this.next() * (max - min + 1)) + min;
+  }
+
+  public pick<T>(arr: T[]): T {
+    return arr[Math.floor(this.next() * arr.length)];
+  }
+
+  public getSeed(): number {
+    return this.state;
+  }
+}
+
+export function hashString(input: string): string {
+  let h1 = 0xdeadbeef ^ input.length;
+  let h2 = 0x41c6ce57 ^ input.length;
+  for (let i = 0, ch; i < input.length; i++) {
+    ch = input.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16).toUpperCase().padStart(12, '0');
+}
+
+==== END FILE src/utils/prng.ts ====
+
+==== BEGIN FILE src/engine/marketContext.ts BLOB 36a560e830649dafe598d16f9786e93565720ab5 ====
+import { DailyMarketContext, RegionId } from '../types/game';
+import { DeterministicRNG, hashString } from '../utils/prng';
+import { SIM_RULES_VERSION } from './simulation';
+
+/** Domain-separated daily stream: independent of strategy and incidental RNG draws.
+ * Reconstructible from saved inputs; contracts/financial records retain the operative context. */
+export function getDailyMarketContext(seed: number, day: number, region: RegionId,
+  rulesVersion = SIM_RULES_VERSION): DailyMarketContext {
+  const key = `market-v1|${rulesVersion}|${seed}|${day}|${region}`;
+  const rng = new DeterministicRNG(parseInt(hashString(key).slice(-8), 16));
+  return { version: 'market-v1', rulesVersion, seed, day, region,
+    factor: 0.85 + rng.next() * 0.37 };
+}
+
+==== END FILE src/engine/marketContext.ts ====
+
+==== BEGIN FILE src/engine/initialState.ts BLOB 5b82120cf89ff0e5a896ba20f2b92c8dba2bb395 ====
+import { GameSaveState, RegionId, ScheduledMatchup } from '../types/game';
+import { REAGENTS_CATALOG, TRAP_PARTS_CATALOG, INITIAL_PRODUCTS, SKILL_TREE_NODES } from '../data/catalog';
+import { INITIAL_MASTERS, INITIAL_PARTIES, INITIAL_RIVALS, INITIAL_INTEL_FEED } from '../data/world';
+import { SIM_RULES_VERSION, computeCanonicalFormulaSignature } from './simulation';
+
+function buildInitialScheduledMatchups(): Record<RegionId, ScheduledMatchup> {
+  const result = {} as Record<RegionId, ScheduledMatchup>;
+  (['cellar', 'warrens', 'blackspire', 'vault'] as const).forEach((reg) => {
+    const m = INITIAL_MASTERS.find((x) => x.region === reg) || INITIAL_MASTERS[0];
+    const p = INITIAL_PARTIES.find((x) => x.region === reg) || INITIAL_PARTIES[0];
+    result[reg] = { masterId: m.id, partyId: p.id };
+  });
+  return result;
+}
+
+export function createInitialSaveState(seed: number = 20260001): GameSaveState {
+  const initReagents: Record<string, number> = {};
+  REAGENTS_CATALOG.slice(0, 20).forEach((r) => {
+    initReagents[r.id] = 3;
+  });
+  const initParts: Record<string, number> = {};
+  TRAP_PARTS_CATALOG.slice(0, 20).forEach((p) => {
+    initParts[p.id] = 2;
+  });
+
+  return {
+    version: '2.1.0-sim002b',
+    seed,
+    day: 1,
+    phase: 'MORNING',
+    activeRegion: 'cellar',
+    unlockedRegions: ['cellar'],
+    gold: 1850,
+    debt: 0,
+    skillPoints: 2,
+    customBrewsCount: 0,
+    customTrapsCount: 0,
+    scheduledMatchups: buildInitialScheduledMatchups(),
+    reagentInventory: initReagents,
+    partInventory: initParts,
+    products: INITIAL_PRODUCTS.map((p) => {
+      const kind = p.category === 'TRAP_MASTER' || p.category === 'HAZARD_MONSTER' ? 'trp' : 'alc';
+      return {
+        ...p,
+        formulaSignature: computeCanonicalFormulaSignature(kind, p.recipeComponents, [], SIM_RULES_VERSION),
+        rulesVersion: SIM_RULES_VERSION,
+        appliedSkills: [],
+        counterClasses: [...p.counterClasses],
+        recipeComponents: [...p.recipeComponents],
+        reactionNotes: [...p.reactionNotes]
+      };
+    }),
+    masters: INITIAL_MASTERS.map((m) => ({
+      ...m,
+      knownHeroCounters: [...m.knownHeroCounters],
+      installedHazards: [...m.installedHazards],
+      installedResetCharges: m.installedHazards.map(() => 0),
+      memoryLog: [...m.memoryLog]
+    })),
+    parties: INITIAL_PARTIES.map((p) => ({
+      ...p,
+      members: p.members.map((mem) => ({ ...mem })),
+      observedTraps: [...p.observedTraps],
+      equippedProducts: [...p.equippedProducts],
+      memoryLog: [...p.memoryLog]
+    })),
+    rivals: INITIAL_RIVALS.map((r) => ({ ...r })),
+    contractsToday: [],
+    contractHistory: [],
+    intelFeed: INITIAL_INTEL_FEED.map((i) => ({ ...i })),
+    expeditionReports: [],
+    financialLedger: [],
+    catalystLedger: [],
+    expertUnlocked: false,
+    skills: SKILL_TREE_NODES.map((s) => ({ ...s })),
+    basiliskChainStage: 1,
+    blackspireResolution: 'NONE',
+    rulesVersion: SIM_RULES_VERSION,
+    tradeTerms: { priceMultiplier: 1, warrantyBacked: false, exclusiveDeal: false, secretProvenance: false },
+    insolvencyEvents: 0
+  };
+}
+
+
+==== END FILE src/engine/initialState.ts ====
+
+==== BEGIN FILE src/engine/progression.ts BLOB 7b46bf83680fcf23916f07d515ba3f21cb6a2bf1 ====
+import { GameSaveState } from '../types/game';
+import { hashString } from '../utils/prng';
+export function canClaimSoloCatalyst(s: GameSaveState): boolean {
+  return !s.expertUnlocked && s.unlockedRegions.includes('blackspire') && s.customBrewsCount >= 2 && s.customTrapsCount >= 2
+    && s.contractHistory.filter(c=>c.buyerType==='MASTER').length >= 2
+    && s.contractHistory.filter(c=>c.buyerType==='HERO').length >= 2;
+}
+export function claimSoloCatalyst(s: GameSaveState): GameSaveState {
+  if (!canClaimSoloCatalyst(s)) return s;
+  const hash=hashString(`SOLO_VESPERA_CATALYST_DAY_${s.day}_${s.seed}`).slice(0,8).toUpperCase();
+  return { ...s, expertUnlocked:true, activeRegion:'vault',
+    unlockedRegions:s.unlockedRegions.includes('vault') ? s.unlockedRegions : [...s.unlockedRegions,'vault'],
+    catalystLedger:[{id:`cat_solo_d${s.day}_${hash.toLowerCase()}`,senderName:'Arch-Architect Vespera (Blackspire Panopticon)',
+      senderType:'SOLO_DM_COURIER',provenanceHash:hash,dayReceived:s.day,
+      commissionNote:'Solo Offline Commission Fulfilled in Blackspire: Demonstrated custom offensive trap engineering, stabilised alchemy, and bilateral double-sales.',
+      isAuthentic:true},...s.catalystLedger] };
+}
+
+==== END FILE src/engine/progression.ts ====
+
+==== BEGIN FILE src/engine/economyEngine.ts BLOB 12af2509a510c4c83e21913057b25fa994d4f9b6 ====
+import { getDailyMarketContext } from './marketContext';
+import {
+  GameSaveState,
+  CraftedProduct,
+  DungeonMaster,
+  AdventuringParty,
+  SaleContract,
+  RegionId,
+  CounterClass
+} from '../types/game';
+import { DeterministicRNG } from '../utils/prng';
+
+export interface QuotationOptions {
+  priceMultiplier?: number; // e.g. 1.04, 1.22
+  warrantyBacked: boolean;
+  exclusiveDeal: boolean;
+  secretProvenance: boolean;
+  day: number;
+  seed: number;
+  unlockedSkills?: string[];
+  rulesVersion?: string;
+}
+
+export interface QuotationResult {
+  unitPrice: number;
+  baseMultiplier: number;
+  trustFactor: number;
+  qualityPremium: number;
+  boycotting: boolean;
+  canAfford: boolean;
+  acceptable: boolean;
+  refusalReason?: string;
+  expectedTrustDelta: number;
+}
+
+export interface TransactionResult {
+  success: boolean;
+  reason?: string;
+  contract?: SaleContract;
+  unitPrice?: number;
+  nextState?: GameSaveState;
+}
+
+/**
+ * Deterministic customer boycott evaluation.
+ * Triggered when client trust < 50; chance scales with severity of trust deficit.
+ */
+export function evaluateCustomerBoycott(
+  buyer: DungeonMaster | AdventuringParty,
+  day: number,
+  seed: number
+): boolean {
+  if (buyer.trust >= 50) return false;
+  // Deterministic seed incorporating buyer id
+  let hashVal = 0;
+  for (let i = 0; i < buyer.id.length; i++) {
+    hashVal = (hashVal * 31 + buyer.id.charCodeAt(i)) >>> 0;
+  }
+  const rng = new DeterministicRNG(seed + day * 104729 + hashVal);
+  const boycottChance = (54 - buyer.trust) * 0.016;
+  return rng.next() < boycottChance;
+}
+
+/**
+ * Authoritative shared commercial quotation calculation.
+ * Used by BOTH player UI (TradeDesk) and headless campaign runner.
+ */
+export function computeQuotation(
+  product: CraftedProduct,
+  buyer: DungeonMaster | AdventuringParty,
+  buyerType: 'MASTER' | 'HERO',
+  options: QuotationOptions
+): QuotationResult {
+  const priceMultiplier = options.priceMultiplier ?? 1.0;
+  const marketSentiment = getDailyMarketContext(options.seed, options.day, buyer.region, options.rulesVersion).factor;
+  const skills = options.unlockedSkills ?? [];
+  const hasSkill = (k: string) => skills.includes(k);
+
+  // 1. Base Multiplier from price setting, contract options, and market sentiment
+  const hasBilateral = hasSkill('bilateral_margin');
+  const baseMultiplier =
+    priceMultiplier *
+    (options.warrantyBacked ? 1.12 : 1.0) *
+    (options.exclusiveDeal ? 1.22 : 1.0) *
+    (hasBilateral ? 1.1 : 1.0) *
+    marketSentiment;
+
+  // 2. Buyer Trust Factor:
+  // For trust < 55: scales down (at trust 48: 0.78 + 48*0.003 = 0.924)
+  // For trust >= 85: loyalty premium (1.08 for master, 1.09 for hero)
+  let trustFactor = 1.0;
+  if (buyer.trust < 55) {
+    trustFactor = 0.78 + buyer.trust * 0.003;
+  } else if (buyer.trust >= 85) {
+    trustFactor = buyerType === 'HERO' ? 1.09 : 1.08;
+  }
+
+  // 3. Product Quality Premium (High-purity / High-stability R&D)
+  let qualityPremium = 1.0;
+  if (buyerType === 'HERO' && product.stability >= 75) {
+    if (hasSkill('paradox_alchemy')) {
+      qualityPremium = 1.24;
+    } else if (hasSkill('chelate_boost')) {
+      qualityPremium = 1.15;
+    }
+  }
+
+  // 4. Secret provenance cost offset (-35g for removing maker's marks)
+  const secretOffset = options.secretProvenance ? 35 : 0;
+
+  // Final Unit Price: floor clamped to 25g
+  const rawQuotedPrice = Math.round(
+    product.suggestedPrice * baseMultiplier * trustFactor * qualityPremium
+  );
+  const unitPrice = Math.max(25, rawQuotedPrice - secretOffset);
+
+  // 5. Customer Acceptance & Refusal Rules
+  const boycotting = evaluateCustomerBoycott(buyer, options.day, options.seed);
+  const canAfford = buyer.budget >= unitPrice;
+
+  let acceptable = true;
+  let refusalReason: string | undefined;
+
+  const capacity = buyerType === 'MASTER' ? 3 : 4;
+  const loadout = buyerType === 'MASTER' ? (buyer as DungeonMaster).installedHazards : (buyer as AdventuringParty).equippedProducts;
+  if (loadout.length >= capacity) {
+    acceptable = false;
+    refusalReason = `Loadout full (${loadout.length}/${capacity}). Use existing supplies before purchasing another unit.`;
+  } else if (boycotting) {
+    acceptable = false;
+    refusalReason = `Client boycott in effect due to low trust (${buyer.trust}/100).`;
+  } else if (!canAfford) {
+    acceptable = false;
+    refusalReason = `Insufficient budget: Client has ${buyer.budget}g but item costs ${unitPrice}g.`;
+  } else if (buyer.trust < 50 && priceMultiplier > 1.15) {
+    // Low-trust clients refuse price-gouging markups
+    acceptable = false;
+    refusalReason = `Client refuses price gouging (${Math.round((priceMultiplier - 1) * 100)}% markup) while trust is below 50.`;
+  }
+
+  // 6. Expected Trust Delta on transaction
+  let expectedTrustDelta = 0;
+  if (priceMultiplier >= 1.2) {
+    expectedTrustDelta -= 3;
+  } else if (options.warrantyBacked) {
+    expectedTrustDelta += buyerType === 'HERO' ? 6 : 5;
+  } else {
+    expectedTrustDelta += buyerType === 'HERO' ? 3 : 2;
+  }
+
+  return {
+    unitPrice,
+    baseMultiplier,
+    trustFactor,
+    qualityPremium,
+    boycotting,
+    canAfford,
+    acceptable,
+    refusalReason,
+    expectedTrustDelta
+  };
+}
+
+/**
+ * Authoritative shared trade transaction execution.
+ * Mutates state immutably and returns updated GameSaveState.
+ */
+export function executeCommercialTransaction(
+  prevState: GameSaveState,
+  buyerType: 'MASTER' | 'HERO',
+  buyerId: string,
+  product: CraftedProduct,
+  terms: {
+    priceMultiplier?: number;
+    warrantyBacked: boolean;
+    exclusiveDeal: boolean;
+    secretProvenance: boolean;
+    rulesVersion?: string;
+  }
+): TransactionResult {
+  if (!terms || !Number.isFinite(terms.priceMultiplier ?? 1) || (terms.priceMultiplier ?? 1) <= 0
+      || !(['warrantyBacked','exclusiveDeal','secretProvenance'] as const).every(k => typeof terms[k] === 'boolean')) {
+    return { success:false, reason:'Invalid commercial terms.' };
+  }
+  // 1. Strict validation: check current authoritative product stock (Gate 3)
+  if (!product || !product.id || !Array.isArray(prevState.products)) {
+    return { success: false, reason: 'Invalid or missing product reference.' };
+  }
+  const currentProduct = prevState.products.find((p) => p && p.id === product.id);
+  if (!currentProduct || !Number.isSafeInteger(currentProduct.stock) || currentProduct.stock <= 0) {
+    return { success: false, reason: 'Product is out of stock or reference is stale.' };
+  }
+
+  // 2. Strict validation: target audience match
+  if (buyerType === 'MASTER' && currentProduct.targetAudience === 'HERO') {
+    return { success: false, reason: 'Product is formulated exclusively for hero parties.' };
+  }
+  if (buyerType === 'HERO' && currentProduct.targetAudience === 'MASTER') {
+    return { success: false, reason: 'Trap hazard is engineered exclusively for dungeon masters.' };
+  }
+
+  // 3. Strict validation: buyer existence & regional accessibility
+  const buyer =
+    buyerType === 'MASTER'
+      ? prevState.masters.find((m) => m.id === buyerId)
+      : prevState.parties.find((p) => p.id === buyerId);
+
+  if (!buyer) {
+    return { success: false, reason: 'Buyer not found in region.' };
+  }
+
+  if (
+    buyer.region !== prevState.activeRegion
+  ) {
+    return { success: false, reason: 'Trading is regional: select the buyer’s unlocked region before selling.' };
+  }
+
+  const loadout = buyerType === 'MASTER'
+    ? (buyer as DungeonMaster).installedHazards : (buyer as AdventuringParty).equippedProducts;
+  const capacity = buyerType === 'MASTER' ? 3 : 4;
+  if (loadout.length >= capacity) return { success: false,
+    reason: `Loadout full (${loadout.length}/${capacity}). Use existing supplies before purchasing another unit.` };
+  if (!prevState.unlockedRegions.includes(prevState.activeRegion)) {
+    return { success: false, reason: 'Active trading region is locked.' };
+  }
+
+  const skills = prevState.skills.filter((s) => s.unlocked).map((s) => s.effectKey);
+  const quotation = computeQuotation(currentProduct, buyer, buyerType, {
+    priceMultiplier: terms.priceMultiplier,
+    warrantyBacked: terms.warrantyBacked,
+    exclusiveDeal: terms.exclusiveDeal,
+    secretProvenance: terms.secretProvenance,
+    day: prevState.day,
+    seed: prevState.seed,
+    unlockedSkills: skills,
+    rulesVersion: prevState.rulesVersion
+  });
+
+  if (!quotation.acceptable) {
+    return { success: false, reason: quotation.refusalReason };
+  }
+
+  const unitPrice = quotation.unitPrice;
+  const contractSeq = prevState.contractHistory.length + 1;
+  const newContract: SaleContract = {
+    marketContext: getDailyMarketContext(prevState.seed, prevState.day, prevState.activeRegion, prevState.rulesVersion),
+    id: `cnt_d${prevState.day}_n${contractSeq}_${currentProduct.id}`,
+    day: prevState.day,
+    buyerType,
+    buyerId,
+    buyerName: buyer.name,
+    productId: currentProduct.id,
+    productName: currentProduct.name,
+    quantity: 1,
+    unitPrice,
+    totalRevenue: unitPrice,
+    unitCost: currentProduct.productionCost,
+    warrantyBacked: terms.warrantyBacked,
+    exclusiveDeal: terms.exclusiveDeal,
+    secretProvenance: terms.secretProvenance,
+    creditFinanced: false
+  };
+
+  // Decrement product stock
+  const nextProducts = prevState.products.map((p) =>
+    p.id === currentProduct.id ? { ...p, stock: Math.max(0, p.stock - 1) } : p
+  );
+
+  // Update Master: installed hazards (max 3), budget, trust, memory
+  const nextMasters = prevState.masters.map((m) => {
+    if (buyerType === 'MASTER' && m.id === buyerId) {
+      return {
+        ...m,
+        budget: Math.max(0, m.budget - unitPrice),
+        trust: Math.max(10, Math.min(100, m.trust + quotation.expectedTrustDelta)),
+        installedHazards: [currentProduct.id, ...m.installedHazards],
+        installedResetCharges: [currentProduct.recipeComponents.includes('part_rst_09') ? 1 : 0, ...(m.installedResetCharges ?? m.installedHazards.map(() => 0))],
+        memoryLog: [
+          ...m.memoryLog,
+          `Day ${prevState.day}: Purchased ${currentProduct.name} [#${currentProduct.formulaSignature || currentProduct.id.slice(-6)}] for ${unitPrice}g.`
+        ]
+      };
+    }
+    return m;
+  });
+
+  // Update Party: potion charges are finite individual consumable doses (Gate 3)
+  // Two purchased potions represent two distinct charges, NOT collapsed into 1 unique ID
+  const nextParties = prevState.parties.map((p) => {
+    if (buyerType === 'HERO' && p.id === buyerId) {
+      return {
+        ...p,
+        budget: Math.max(0, p.budget - unitPrice),
+        trust: Math.max(10, Math.min(100, p.trust + quotation.expectedTrustDelta)),
+        equippedProducts: [currentProduct.id, ...p.equippedProducts],
+        memoryLog: [
+          ...p.memoryLog,
+          `Day ${prevState.day}: Purchased ${currentProduct.name} [#${currentProduct.formulaSignature || currentProduct.id.slice(-6)}] for ${unitPrice}g.`
+        ]
+      };
+    }
+    return p;
+  });
+
+  const nextState: GameSaveState = {
+    ...prevState,
+    phase: 'TRADE',
+    scheduledMatchups: { ...prevState.scheduledMatchups, [prevState.activeRegion]: {
+      ...prevState.scheduledMatchups[prevState.activeRegion],
+      ...(buyerType === 'MASTER' ? { masterId:buyerId } : { partyId:buyerId }) } },
+    gold: prevState.gold + unitPrice,
+    products: nextProducts,
+    masters: nextMasters,
+    parties: nextParties,
+    contractsToday: [...prevState.contractsToday, newContract],
+    contractHistory: [...prevState.contractHistory, newContract]
+  };
+
+  return {
+    success: true,
+    contract: newContract,
+    unitPrice,
+    nextState
+  };
+}
+
+/**
+ * Finite consumables and wear resolution (Fixes Codex A03).
+ * Potions are single-use consumable charges: consuming a loadout item reduces the loadout,
+ * including down to 0 charges ([]). Traps wear out without auto-reset / temporal rewind.
+ */
+export function resolveConsumableWear(
+  party: AdventuringParty,
+  master: DungeonMaster,
+  warrantyClaimsTriggered: number,
+  day: number,
+  skills: string[]
+): {
+  nextEquipped: string[];
+  nextInstalled: string[];
+  nextResetCharges: number[];
+  rewindsSpent: number;
+} {
+  const autoResetSkill = skills.includes('auto_reset_cam');
+
+  // Party potion loadout: consumable charges deplete after each expedition
+  // If party has potions equipped, at least 1 potion is consumed on the delve.
+  // When down to 1 potion, it consumes down to []!
+  let nextEquipped = [...party.equippedProducts];
+  if (nextEquipped.length > 0) {
+    // Consume the oldest equipped potion
+    nextEquipped = nextEquipped.slice(1);
+  }
+
+  // Master trap wear: non-resetting traps exhaust their armed tension / durability
+  // unless auto-reset skill or temporal rewind loop is armed
+  let nextInstalled = [...master.installedHazards];
+  let nextResetCharges = [...(master.installedResetCharges ?? master.installedHazards.map(() => 0))];
+  let rewindsSpent = 0;
+  if (!autoResetSkill) {
+    // Every 3 delves (or if warranty claim / breakdown occurred), oldest trap exhausts tension
+    if (day % 3 === 0 || warrantyClaimsTriggered > 0) {
+      if (nextInstalled.length > 0) {
+        if ((nextResetCharges[0] ?? 0) > 0) {
+          nextResetCharges[0] -= 1;
+          rewindsSpent = 1;
+        } else {
+          nextInstalled = nextInstalled.slice(1);
+          nextResetCharges = nextResetCharges.slice(1);
+        }
+      }
+    }
+  }
+
+  return {
+    nextEquipped,
+    nextInstalled,
+    nextResetCharges,
+    rewindsSpent
+  };
+}
+
+/**
+ * Regional Exclusivity Breach and Warranty Settlement.
+ */
+export function computeRegionalFinesAndClaims(
+  regionId: RegionId,
+  exclusivityBreachDetected: boolean,
+  warrantyClaimsTriggered: number,
+  skills: string[]
+): {
+  breachFine: number;
+  warrantyPayout: number;
+  totalClaimsAndFines: number;
+} {
+  const breachFineByRegion: Record<RegionId, number> = {
+    cellar: 160,
+    warrens: 240,
+    blackspire: 380,
+    vault: 520
+  };
+
+  const hasWarrantyShield = skills.includes('warranty_shield');
+  const claimBase = 165 * (hasWarrantyShield ? 0.6 : 1.0);
+
+  const breachFine = exclusivityBreachDetected ? breachFineByRegion[regionId] : 0;
+  const warrantyPayout = Math.round(warrantyClaimsTriggered * claimBase);
+
+  return {
+    breachFine,
+    warrantyPayout,
+    totalClaimsAndFines: breachFine + warrantyPayout
+  };
+}
+
+==== END FILE src/engine/economyEngine.ts ====
+
+==== BEGIN FILE src/engine/saveManager.ts BLOB dff1f69726f1019290d4c5a75c7e2c574bbb1e77 ====
+import { GameSaveState } from '../types/game';
+import { INITIAL_PRODUCTS } from '../data/catalog';
+import { hashString } from '../utils/prng';
+import { createInitialSaveState } from './initialState';
+export { createInitialSaveState } from './initialState';
+
+export const SAVE_STORAGE_KEY = 'trap_and_tonic_save_v2';
+export const SAVE_BACKUP_KEY = 'trap_and_tonic_save_v2_backup';
+export const HISTORICAL_V2_BACKUP_KEY = 'trap_and_tonic_backup_v2';
+export const LEGACY_BACKUP_KEY = 'trap_and_tonic_save_v1_backup';
+export const LEGACY_SAVE_KEY = 'trap_and_tonic_save_v1';
+export const QUARANTINE_KEY = 'trap_and_tonic_quarantined_corrupt_save';
+const SOURCES = [[SAVE_STORAGE_KEY, 'PRIMARY'], [SAVE_BACKUP_KEY, 'BACKUP'],
+  [HISTORICAL_V2_BACKUP_KEY, 'HISTORICAL_V2_BACKUP'], [LEGACY_BACKUP_KEY, 'LEGACY_BACKUP'],
+  [LEGACY_SAVE_KEY, 'LEGACY']] as const;
+export interface SaveValidationResult { valid: boolean; state?: GameSaveState; error?: string; }
+export interface SaveLoadResult {
+  state: GameSaveState; source: typeof SOURCES[number][1] | 'FRESH';
+  recovered: boolean; notice?: string; writeBlocked?: boolean;
+}
+const regions = ['cellar', 'warrens', 'blackspire', 'vault'];
+function ensure(ok: unknown, path: string): asserts ok { if (!ok) throw new Error(`Invalid save: ${path}`); }
+function object(x: any) { return x !== null && typeof x === 'object' && !Array.isArray(x); }
+function finite(x: any) { return typeof x === 'number' && Number.isFinite(x); }
+function count(x: any) { return Number.isSafeInteger(x) && x >= 0; }
+function strings(x: any) { return Array.isArray(x) && x.every(v => typeof v === 'string'); }
+function fields(x: any, template: any, path: string) {
+  ensure(object(x), path);
+  for (const [k, v] of Object.entries(template)) {
+    if (Array.isArray(v)) ensure(Array.isArray(x[k]), `${path}.${k}`);
+    else if (typeof v === 'number') ensure(finite(x[k]), `${path}.${k}`);
+    else ensure(typeof x[k] === typeof v && x[k] !== null, `${path}.${k}`);
+  }
+}
+function unique(xs: any[], path: string) {
+  ensure(new Set(xs.map(x => x.id)).size === xs.length, `${path}: duplicate IDs`);
+}
+
+/** Only explicitly versioned additions are defaulted. Damaged progress/stat fields are never guessed. */
+export function normalizeLoadedSave(input: Partial<GameSaveState>): GameSaveState {
+  const s = structuredClone(input) as GameSaveState;
+  ensure(object(s) && ['1.0.0', '2.0.0-sim002', '2.1.0-sim002b'].includes(s.version), 'unsupported persistence version');
+  const legacy = s.version !== '2.1.0-sim002b';
+  if (legacy) {
+    s.customBrewsCount ??= 0; s.customTrapsCount ??= 0; s.insolvencyEvents ??= 0;
+    s.rulesVersion ??= 'v2.0-sim002';
+    s.tradeTerms ??= { priceMultiplier: 1, warrantyBacked: false, exclusiveDeal: false, secretProvenance: false };
+    // Older UI omitted the ninth catalogue entry despite already installing it. Restore only its definition, no shop stock.
+    if (Array.isArray(s.products) && Array.isArray(s.masters) && Array.isArray(s.parties)) {
+      const refs = [...s.masters.flatMap(m => m?.installedHazards ?? []), ...s.parties.flatMap(p => p?.equippedProducts ?? [])];
+      for (const id of new Set(refs)) if (!s.products.some(p => p?.id === id)) {
+        const known = INITIAL_PRODUCTS.find(p => p.id === id);
+        if (known) s.products.push({ ...structuredClone(known), stock: 0 });
+      }
+    }
+    for (const m of s.masters ?? []) if (m && Array.isArray(m.installedHazards)) m.installedResetCharges ??= m.installedHazards.map(() => 0);
+    const sched: any = s.scheduledMatchups ?? {};
+    for (const r of regions) {
+      const m = s.masters?.find(m => m?.id === sched[r]?.masterId && m.region === r) ?? s.masters?.find(m => m?.region === r);
+      const p = s.parties?.find(p => p?.id === sched[r]?.partyId && p.region === r) ?? s.parties?.find(p => p?.region === r);
+      sched[r] = { masterId: m?.id, partyId: p?.id };
+    }
+    s.scheduledMatchups = sched;
+  }
+  validateState(s);
+  s.version = '2.1.0-sim002b';
+  return s;
+}
+
+function validateState(s: GameSaveState) {
+  const base = createInitialSaveState(s.seed);
+  fields(s, base, 'state');
+  ensure(count(s.seed) && count(s.day) && s.day > 0, 'seed/day');
+  ensure(finite(s.gold) && finite(s.debt) && s.gold >= 0 && s.debt >= 0, 'cash/debt');
+  for (const k of ['skillPoints','customBrewsCount','customTrapsCount','basiliskChainStage','insolvencyEvents'] as const) ensure(count(s[k]), k);
+  ensure(s.rulesVersion === 'v2.0-sim002', 'rulesVersion');
+  ensure(['MORNING','PREPARATION','TRADE','EXPEDITIONS','EVENING'].includes(s.phase), 'phase');
+  ensure(strings(s.unlockedRegions) && s.unlockedRegions.length > 0 && s.unlockedRegions.every(r => regions.includes(r)) && s.unlockedRegions.includes(s.activeRegion), 'regions');
+  ensure(['NONE','HONEST_BROKER','CARTEL_SYNDICATE','PARTISAN_ARMOURER','CALCULATED_CHAOS'].includes(s.blackspireResolution), 'resolution');
+  for (const k of ['reagentInventory','partInventory'] as const) {
+    ensure(object(s[k]) && Object.entries(s[k]).every(([id,n]) => id.length > 0 && count(n)), k);
+  }
+  ensure(Array.isArray(s.products) && s.products.length > 0, 'products');
+  for (const p of s.products) {
+    // Formula metadata is optional in historical products; every gameplay stat is mandatory.
+    const { formulaSignature, rulesVersion, appliedSkills, ...template } = base.products[0];
+    fields(p, template, 'product');
+    ensure(p.id.length > 0 && count(p.stock) && p.productionCost >= 0 && p.suggestedPrice >= 0, 'product counters');
+    ensure(['HERO','MASTER','BOTH'].includes(p.targetAudience), 'product audience');
+    ensure(['TONIC_HERO','COUNTER_GEAR','TRAP_MASTER','HAZARD_MONSTER','DUAL_SOLVENT'].includes(p.category), 'product category');
+    for (const k of ['counterClasses','recipeComponents','reactionNotes'] as const) ensure(strings(p[k]), `product.${k}`);
+    ensure(p.counterClasses.every(c => ['detection','disruption','resistance','bypass_mass','sabotage','routing','filtration'].includes(c)), 'counter classes');
+    for (const k of ['formulaSignature','rulesVersion'] as const) if (p[k] !== undefined) ensure(typeof p[k] === 'string', `product.${k}`);
+    if (p.appliedSkills !== undefined) ensure(strings(p.appliedSkills), 'applied skills');
+    for (const k of ['potency','stability','reliability','detectionDC'] as const) ensure(p[k] >= 0 && p[k] <= 100, `product.${k}`);
+  }
+  unique(s.products, 'products');
+  const sku = new Set(s.products.map(p => p.id));
+  for (const [list, template, kind] of [[s.masters, base.masters[0], 'master'], [s.parties, base.parties[0], 'party']] as const) {
+    ensure(Array.isArray(list) && list.length > 0, kind);
+    for (const c of list) {
+      fields(c, template, kind);
+      ensure(regions.includes(c.region) && c.budget >= 0 && c.trust >= 0 && c.trust <= 100, `${kind} budget/trust/region`);
+      ensure(strings(c.memoryLog), `${kind} memory`);
+      if ('members' in c) {
+        ensure(c.members.length > 0, 'party members');
+        for (const m of c.members) {
+          fields(m, base.parties[0].members[0], 'member');
+          ensure(m.massKg > 0 && m.maxHp > 0 && m.hp >= 0 && m.hp <= m.maxHp, 'member stats');
+          ensure(['Vanguard','Alchemist','Scout','Arcanist'].includes(m.role) && ['Healthy','Petrified','Poisoned','Recovering'].includes(m.status), 'member enums');
+        }
+        ensure(strings(c.observedTraps) && strings(c.equippedProducts) && c.equippedProducts.every(id => sku.has(id)), 'party SKU references');
+      } else {
+        ensure(strings(c.knownHeroCounters) && strings(c.installedHazards) && c.installedHazards.every(id => sku.has(id)), 'master SKU references');
+        ensure(count(c.catalystCommissionStage), 'commission stage');
+        ensure(Array.isArray(c.installedResetCharges) && c.installedResetCharges.length === c.installedHazards.length && c.installedResetCharges.every((n,i) => count(n) && n <= 1 && (n === 0 || s.products.find(p=>p.id===c.installedHazards[i])?.recipeComponents.includes('part_rst_09'))), 'temporal slot charges');
+      }
+    }
+    unique(list as any[], kind);
+  }
+  ensure(object(s.scheduledMatchups), 'schedule');
+  for (const r of regions) {
+    const match = s.scheduledMatchups[r as keyof typeof s.scheduledMatchups];
+    ensure(match && s.masters.some(m => m.id === match.masterId && m.region === r) && s.parties.some(p => p.id === match.partyId && p.region === r), `schedule.${r}`);
+  }
+  for (const skill of s.skills) {
+    const known = base.skills.find(k => k.id === skill?.id);
+    ensure(known, 'unknown skill'); fields(skill, known, 'skill');
+    ensure(skill.effectKey === known.effectKey && skill.costPoints === known.costPoints, 'skill identity');
+  }
+  unique(s.skills,'skills'); ensure(s.skills.length === base.skills.length, 'missing skills');
+  for (const r of s.rivals) fields(r, base.rivals[0], 'rival');
+  for (const i of s.intelFeed) { fields(i, base.intelFeed[0], 'intel'); ensure(count(i.day) && regions.includes(i.region), 'intel day/region'); }
+  const contract = { id:'',day:1,buyerType:'',buyerId:'',buyerName:'',productId:'',productName:'',quantity:1,unitPrice:0,totalRevenue:0,unitCost:0,warrantyBacked:false,exclusiveDeal:false,secretProvenance:false,creditFinanced:false };
+  for (const xs of [s.contractsToday,s.contractHistory]) {
+    for (const c of xs) {
+      fields(c,contract,'contract'); ensure(count(c.day) && c.day > 0 && count(c.quantity) && c.quantity > 0 && c.unitPrice >= 0 && c.unitCost >= 0 && c.totalRevenue === c.quantity*c.unitPrice, 'contract values');
+      ensure(sku.has(c.productId) && (c.buyerType === 'MASTER' ? s.masters : c.buyerType === 'HERO' ? s.parties : []).some(b => b.id === c.buyerId), 'contract references');
+      if (c.marketContext) market(c.marketContext);
+    } unique(xs,'contracts');
+  }
+  ensure(s.contractsToday.every(c => s.contractHistory.some(h => JSON.stringify(c) === JSON.stringify(h))), 'daily contract history');
+  const financial = { day:1,grossRevenue:0,cogs:0,grossMargin:0,overheadAndStorage:0,warrantyAndClaims:0,finesAndBribes:0,financingInterest:0,netProfit:0,endingCash:0,inventoryValue:0,debt:0,netWorth:0 };
+  for (const f of s.financialLedger) { fields(f,financial,'financial'); ensure(count(f.day) && f.endingCash >= 0 && f.debt >= 0, 'financial counters'); if (f.marketContext) market(f.marketContext); }
+  for (const c of s.catalystLedger) { fields(c,{id:'',senderName:'',senderType:'',provenanceHash:'',dayReceived:1,commissionNote:'',isAuthentic:false},'catalyst'); ensure(['SOLO_DM_COURIER','PEER_QR_EXCHANGE'].includes(c.senderType) && count(c.dayReceived), 'catalyst type/day'); ensure(c.senderType !== 'PEER_QR_EXCHANGE' || !c.isAuthentic, 'community code authenticity'); }
+  for (const r of s.expeditionReports) {
+    fields(r,{id:'',day:1,seed:1,rulesVersion:'',region:'',masterId:'',masterName:'',partyId:'',partyName:'',masterSupplies:[],heroSupplies:[],rooms:[],totalLooted:0,masterTreasuryDelta:0,partyBudgetDelta:0,warrantyClaimsTriggered:0,exclusivityBreachDetected:false,doubleSaleDemandCreated:[],summaryHeadline:''},'report');
+    ensure(s.masters.some(m=>m.id===r.masterId) && s.parties.some(p=>p.id===r.partyId) && r.rooms.length>0, 'report references');
+    for (const k of ['masterSupplies','heroSupplies','doubleSaleDemandCreated'] as const) ensure(strings(r[k]), `report.${k}`);
+    for (const room of r.rooms) {
+      fields(room,{roomIndex:1,roomName:'',hazardName:'',hazardId:'',triggerType:'',triggerMassThresholdKg:0,heroEffectiveMassKg:1,outcome:'',damageDealt:0,lootSecured:0,causalExplanation:'',learnedByHeroes:'',learnedByMaster:''},'room');
+      for (const k of ['heroCounterUsed','chemicalReaction','casualtyName'] as const) ensure(room[k] === null || typeof room[k] === 'string', `room.${k}`);
+    }
+  }
+  fields(s.tradeTerms, base.tradeTerms, 'trade terms'); ensure(s.tradeTerms!.priceMultiplier > 0, 'trade price');
+}
+function market(m: any) {
+  fields(m,{version:'',rulesVersion:'',seed:1,day:1,region:'',factor:1},'market');
+  ensure(m.version === 'market-v1' && m.factor >= .85 && m.factor < 1.22 && regions.includes(m.region), 'market context');
+}
+export function validateSavePayload(raw: string | null | undefined): SaveValidationResult {
+  try { ensure(typeof raw === 'string' && raw.length > 0, 'empty data');
+    return { valid: true, state: normalizeLoadedSave(JSON.parse(raw)) };
+  } catch (err) { return { valid: false, error: String(err) }; }
+}
+export function quarantinePayload(storage: Storage, raw: string) {
+  const key = `${QUARANTINE_KEY}:${hashString(raw)}`;
+  if (!storage.getItem(key)) storage.setItem(key, raw);
+  if (!storage.getItem(QUARANTINE_KEY)) storage.setItem(QUARANTINE_KEY, raw);
+}
+export function loadGameWithRecovery(storage: Storage = localStorage): SaveLoadResult {
+  const original = Object.fromEntries(SOURCES.map(([key]) => [key, storage.getItem(key)]));
+  let rejected = false; let archiveFailed = false;
+  for (const [key, source] of SOURCES) {
+    const raw = original[key]; if (!raw) continue;
+    const check = validateSavePayload(raw);
+    if (!check.valid) { rejected = true; try { quarantinePayload(storage,raw); } catch { archiveFailed = true; } continue; }
+    const migrated = JSON.stringify(check.state) !== raw;
+    // Archive original storage before changing any checkpoint. On quota failure leave all slots untouched.
+    if (migrated || source !== 'PRIMARY') {
+      try { const snapshot = JSON.stringify(original); const id = `trap_and_tonic_pre_migration:${hashString(snapshot)}`;
+        if (!storage.getItem(id)) storage.setItem(id,snapshot);
+      } catch { archiveFailed = true; }
+    }
+    return { state: check.state!, source, recovered: source !== 'PRIMARY' || migrated,
+      writeBlocked: archiveFailed,
+      notice: source !== 'PRIMARY' || migrated || rejected || archiveFailed
+        ? `Recovered ${key}: Day ${check.state!.day}, ${check.state!.gold}g. Original checkpoints preserved.${archiveFailed ? ' Storage full: autosave paused; export your ledger.' : ''}` : undefined };
+  }
+  return { state: createInitialSaveState(), source:'FRESH', recovered:false, writeBlocked:rejected,
+    notice: rejected ? 'No trustworthy checkpoint found. Original saves quarantined; autosave paused. Import a valid ledger or explicitly start a new campaign.' : undefined };
+}
+export function persistAtomicSaveSafe(state: GameSaveState, storage: Storage = localStorage): boolean {
+  try {
+    const outgoing = validateSavePayload(JSON.stringify(state));
+    if (!outgoing.valid) return false;
+    const serialized = JSON.stringify(outgoing.state);
+    const previous = storage.getItem(SAVE_STORAGE_KEY);
+    if (previous === serialized) return true;
+    if (previous && validateSavePayload(previous).valid) storage.setItem(SAVE_BACKUP_KEY,previous);
+    storage.setItem(SAVE_STORAGE_KEY,serialized);
+    return true;
+  } catch { return false; }
+}
+
+==== END FILE src/engine/saveManager.ts ====
