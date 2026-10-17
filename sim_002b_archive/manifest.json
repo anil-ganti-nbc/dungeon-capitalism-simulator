@@ -1,0 +1,57 @@
+{
+  "status": "SELF-TESTED / INDEPENDENT ACCEPTANCE PENDING",
+  "sourceCommit": "be2608c930bd6ba9e846ae0d35bba8ac066c9c16",
+  "sourceTree": "001ad0425f51dbe234a980a5c73af412b31b976d",
+  "pairedSeeds": 1000,
+  "campaigns": 5000,
+  "horizonDays": 120,
+  "node": "v24.18.0",
+  "summary": [
+    {
+      "strategy": "BALANCED_MERCHANT",
+      "campaigns": 1000,
+      "medianRevenue": 89008.5,
+      "medianNetProfit": 44617.5,
+      "bankruptcies": 0,
+      "expertUnlocked": 1000
+    },
+    {
+      "strategy": "DUNGEON_LOYALIST",
+      "campaigns": 1000,
+      "medianRevenue": 4878,
+      "medianNetProfit": -7317,
+      "bankruptcies": 1000,
+      "expertUnlocked": 0
+    },
+    {
+      "strategy": "HERO_BENEFACTOR",
+      "campaigns": 1000,
+      "medianRevenue": 64192,
+      "medianNetProfit": 28979.5,
+      "bankruptcies": 0,
+      "expertUnlocked": 0
+    },
+    {
+      "strategy": "ALCHEMICAL_INDUSTRIALIST",
+      "campaigns": 1000,
+      "medianRevenue": 93861,
+      "medianNetProfit": 52464,
+      "bankruptcies": 0,
+      "expertUnlocked": 1000
+    },
+    {
+      "strategy": "PREDATORY_CAPITALIST",
+      "campaigns": 1000,
+      "medianRevenue": 30457,
+      "medianNetProfit": 2813.5,
+      "bankruptcies": 857,
+      "expertUnlocked": 642
+    }
+  ],
+  "caveats": [
+    "Strategy policies select crafting, financing and progression timing; these campaigns do not certify whole-campaign UI equivalence.",
+    "Specialists cannot unlock Expert through casual peer codes; the bilateral solo commission still applies.",
+    "No balancing changes or independent enjoyment acceptance inferred.",
+    "Physical Android / APK / OS kill NOT TESTED."
+  ]
+}

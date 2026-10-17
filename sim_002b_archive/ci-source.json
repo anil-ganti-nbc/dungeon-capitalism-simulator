@@ -1,0 +1,16 @@
+{
+  "commit": "be2608c930bd6ba9e846ae0d35bba8ac066c9c16",
+  "runId": 39075287976,
+  "jobId": 117521075414,
+  "url": "https://github.com/anil-ganti-nbc/dungeon-capitalism-simulator/actions/runs/39075287976",
+  "conclusion": "success",
+  "checks": [
+    "ordinary npm ci",
+    "lint",
+    "11 unit assertion suites",
+    "production build",
+    "real Chromium parity and mobile browser tests",
+    "1g negative-control regression",
+    "offline cold reopen"
+  ]
+}

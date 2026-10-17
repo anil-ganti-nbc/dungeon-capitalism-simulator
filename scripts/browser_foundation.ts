@@ -15,12 +15,12 @@ async function boot(name:string,keys:Record<string,string>={},mobile?:{width:num
   const c=await browser.newContext({viewport:mobile??{width:1440,height:1000},isMobile:!!mobile,hasTouch:!!mobile});
   await c.addInitScript(data=>{if(!sessionStorage.getItem('__boot')){for(const [k,v] of Object.entries(data))localStorage.setItem(k,v);sessionStorage.setItem('__boot','1');}},keys);
   const p=await c.newPage();p.on('pageerror',e=>errors.push({name,error:e.message}));p.on('console',m=>{if(m.type()==='error')evidence.push({name,console:m.text()});});
-  await p.goto(url);await p.getByRole('button',{name:/^(Open Merchant Ledger|Continue Ledger)/}).click();
+  await p.goto(url);const open=p.getByRole('button',{name:/^(Open Merchant Ledger|Continue Ledger)/});if(mobile)await open.tap();else await open.click();
   await p.waitForTimeout(80);return {c,p};
 }
 const state=(p:Page)=>p.evaluate(()=>JSON.parse(localStorage.getItem('trap_and_tonic_save_v2')!));
 async function shot(p:Page,name:string){await p.screenshot({path:path.join(out,name+'.png')});}
-async function tab(p:Page,name:string,mobile=false){await p.getByRole('button',{name,exact:true}).click();}
+async function tab(p:Page,name:string,mobile=false){const b=p.getByRole('button',{name,exact:true});if(mobile)await b.tap();else await b.click();}
 async function raid(p:Page){const before=await state(p);await p.getByRole('button',{name:/^Run Scheduled Expedition/}).click();await p.waitForTimeout(60);const after=await state(p);assert.equal(after.day,before.day+1);return {before,after};}
 try {
   // Historical recovery uses the original Day5 export, not a synthetic fresh save.
@@ -69,13 +69,17 @@ try {
   for(const viewport of [{width:375,height:812},{width:412,height:915}]){
     const name=`touch-${viewport.width}`;const {c,p}=await boot(name,{},viewport);const cdp=await c.newCDPSession(p);
     for(const scale of ['normal','xlarge']){
-      if(scale==='xlarge'){await p.getByRole('button',{name:'Options & A11y (Esc)',exact:true}).click();await p.getByRole('button',{name:'XLARGE',exact:true}).tap();await p.getByRole('button',{name:'Resume Campaign',exact:true}).tap();}
+      if(scale==='xlarge'){await p.getByRole('button',{name:'Options & A11y (Esc)',exact:true}).tap();await p.getByRole('button',{name:'XLARGE',exact:true}).tap();await p.getByRole('button',{name:'Resume Campaign',exact:true}).tap();}
       const headerControls=await p.locator('header button').evaluateAll(xs=>xs.map(e=>({x:e.getBoundingClientRect().x,right:e.getBoundingClientRect().right})));
       assert(headerControls.every(e=>e.x>=0 && e.right<=viewport.width+1));
       await tab(p,'Trade',true);await shot(p,`${name}-${scale}-trade`);
       const trade=await p.locator('main').evaluate(el=>({width:el.clientWidth,scrollWidth:el.scrollWidth,scrollLeft:el.scrollLeft}));assert.equal(trade.scrollWidth,trade.width);
-      await tab(p,'Skills',true);await tab(p,'Alchemy',true);await shot(p,`${name}-${scale}-alchemy`);
-      await tab(p,'Traps',true);await shot(p,`${name}-${scale}-traps`);
+      await tab(p,'Skills',true);await tab(p,'Alchemy',true);
+      if(scale==='normal'){const before=await state(p);await p.getByRole('button',{name:/Brew Batch/}).tap();await p.waitForTimeout(30);const after=await state(p);assert.equal(after.customBrewsCount,before.customBrewsCount+1);evidence.push({name,action:'touch-brew',before,after});}
+      await shot(p,`${name}-${scale}-alchemy`);
+      await tab(p,'Traps',true);
+      if(scale==='normal'){const before=await state(p);await p.getByRole('button',{name:/Assemble 2 Units/}).tap();await p.waitForTimeout(30);const after=await state(p);assert.equal(after.customTrapsCount,before.customTrapsCount+1);evidence.push({name,action:'touch-assemble',before,after});}
+      await shot(p,`${name}-${scale}-traps`);
       await tab(p,'Arena',true);const canvas=p.locator('canvas');await canvas.scrollIntoViewIfNeeded();await p.waitForTimeout(50);
       const b=(await canvas.boundingBox())!,before={x:await canvas.getAttribute('data-camera-x'),y:await canvas.getAttribute('data-camera-y'),scroll:await p.locator('main').evaluate(el=>el.scrollLeft)};
       const x=b.x+b.width*.75,y=b.y+b.height*.55;

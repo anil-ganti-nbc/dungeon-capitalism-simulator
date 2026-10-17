@@ -1,0 +1,173 @@
+{
+  "status": "SELF-TESTED / INDEPENDENT ACCEPTANCE PENDING",
+  "releaseRecommendation": "HOLD",
+  "testedGameplayCommit": "be2608c930bd6ba9e846ae0d35bba8ac066c9c16",
+  "testedSourceTree": "001ad0425f51dbe234a980a5c73af412b31b976d",
+  "parity": {
+    "status": "SELF-TESTED / INDEPENDENT ACCEPTANCE PENDING",
+    "summaries": [
+      {
+        "suite": "historical-f368-60",
+        "traces": 60,
+        "matched": 60,
+        "actions": 124
+      },
+      {
+        "suite": "historical-c45-60",
+        "traces": 60,
+        "matched": 60,
+        "actions": 133
+      },
+      {
+        "suite": "captured-ui-60",
+        "traces": 60,
+        "matched": 60,
+        "actions": 124
+      }
+    ],
+    "errors": []
+  },
+  "commands": [
+    {
+      "name": "clean-install",
+      "command": [
+        "node",
+        "C:/Program Files/nodejs/node_modules/npm/bin/npm-cli.js",
+        "ci",
+        "--ignore-scripts",
+        "--cache",
+        "../npm-cache"
+      ],
+      "exitCode": 0,
+      "seconds": 21.65
+    },
+    {
+      "name": "lint",
+      "command": [
+        "node",
+        "C:/Program Files/nodejs/node_modules/npm/bin/npm-cli.js",
+        "run",
+        "lint"
+      ],
+      "exitCode": 0,
+      "seconds": 1.91
+    },
+    {
+      "name": "unit",
+      "command": [
+        "node",
+        "C:/Program Files/nodejs/node_modules/npm/bin/npm-cli.js",
+        "test"
+      ],
+      "exitCode": 0,
+      "seconds": 1.17
+    },
+    {
+      "name": "build",
+      "command": [
+        "node",
+        "C:/Program Files/nodejs/node_modules/npm/bin/npm-cli.js",
+        "run",
+        "build"
+      ],
+      "exitCode": 0,
+      "seconds": 3.83
+    },
+    {
+      "name": "browser-parity",
+      "command": [
+        "node",
+        "node_modules/tsx/dist/cli.mjs",
+        "scripts/replay_parity.ts"
+      ],
+      "exitCode": 0,
+      "seconds": 69.58
+    },
+    {
+      "name": "browser-foundation",
+      "command": [
+        "node",
+        "node_modules/tsx/dist/cli.mjs",
+        "scripts/browser_foundation.ts"
+      ],
+      "exitCode": 0,
+      "seconds": 14.41
+    },
+    {
+      "name": "negative",
+      "command": [
+        "node",
+        "scripts/verify_negative.mjs"
+      ],
+      "exitCode": 0,
+      "seconds": 1.96
+    },
+    {
+      "name": "offline",
+      "command": [
+        "node",
+        "node_modules/tsx/dist/cli.mjs",
+        "scripts/offline_smoke.ts"
+      ],
+      "exitCode": 0,
+      "seconds": 3.13
+    },
+    {
+      "name": "campaigns",
+      "command": [
+        "node",
+        "node_modules/tsx/dist/cli.mjs",
+        "scripts/run_sim_002b.ts"
+      ],
+      "exitCode": 0,
+      "seconds": 22.99
+    }
+  ],
+  "campaignSummary": [
+    {
+      "strategy": "BALANCED_MERCHANT",
+      "campaigns": 1000,
+      "medianRevenue": 89008.5,
+      "medianNetProfit": 44617.5,
+      "bankruptcies": 0,
+      "expertUnlocked": 1000
+    },
+    {
+      "strategy": "DUNGEON_LOYALIST",
+      "campaigns": 1000,
+      "medianRevenue": 4878,
+      "medianNetProfit": -7317,
+      "bankruptcies": 1000,
+      "expertUnlocked": 0
+    },
+    {
+      "strategy": "HERO_BENEFACTOR",
+      "campaigns": 1000,
+      "medianRevenue": 64192,
+      "medianNetProfit": 28979.5,
+      "bankruptcies": 0,
+      "expertUnlocked": 0
+    },
+    {
+      "strategy": "ALCHEMICAL_INDUSTRIALIST",
+      "campaigns": 1000,
+      "medianRevenue": 93861,
+      "medianNetProfit": 52464,
+      "bankruptcies": 0,
+      "expertUnlocked": 1000
+    },
+    {
+      "strategy": "PREDATORY_CAPITALIST",
+      "campaigns": 1000,
+      "medianRevenue": 30457,
+      "medianNetProfit": 2813.5,
+      "bankruptcies": 857,
+      "expertUnlocked": 642
+    }
+  ],
+  "physicalAndroid": "NOT TESTED",
+  "APK": "NOT TESTED",
+  "OSKill": "NOT TESTED",
+  "frozenSIM001Diff": "",
+  "generatedAtUTC": "2026-10-17T22:32:36.875658+00:00"
+}
