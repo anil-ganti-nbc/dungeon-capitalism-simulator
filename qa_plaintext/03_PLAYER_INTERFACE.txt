@@ -1,0 +1,3371 @@
+TRAP & TONIC / SIM-002B EXACT PINNED SOURCE / GATE C: PLAYER UI, TRADING AND WORKSHOP
+Candidate: 6722ac6edd8ed37633db56804517c859a58829df
+Base: c45f33e143f71acd7a66edacf773161fb4b9416f
+PR #4 https://github.com/anil-ganti-nbc/dungeon-capitalism-simulator/pull/4
+This contains ORIGINAL UTF-8 GitHub source from the pinned commit. Review-only export; no runtime execution implied.
+
+==== BEGIN FILE src/App.tsx BLOB db522f0d5eaa25ff51ec4d9c7a6dae1543e763d5 ====
+import { claimSoloCatalyst } from './engine/progression';
+import { getDailyMarketContext } from './engine/marketContext';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import {
+  GameShellState,
+  WorkspaceTab,
+  RegionId,
+  GameSaveState,
+  AccessibilitySettings,
+  CraftedProduct,
+  Reagent,
+  TrapPart,
+  SaleContract,
+  ScheduledMatchup
+} from './types/game';
+import {
+  REAGENTS_CATALOG,
+  TRAP_PARTS_CATALOG,
+  INITIAL_PRODUCTS,
+  SKILL_TREE_NODES
+} from './data/catalog';
+import {
+  REGIONS_DATA,
+  INITIAL_MASTERS,
+  INITIAL_PARTIES,
+  INITIAL_RIVALS,
+  INITIAL_INTEL_FEED
+} from './data/world';
+import {
+  SIM_RULES_VERSION,
+  computeCanonicalFormulaSignature,
+  mergeCraftedProductIntoInventory,
+  getRegionEncounterSchedule,
+  simulateRegionExpedition,
+  predictExpeditionForecast,
+  verifyAndParseCatalystCode
+} from './engine/simulation';
+import { hashString } from './utils/prng';
+import { soundFX } from './utils/sound';
+import { TitleScreen } from './components/TitleScreen';
+import { ExpeditionCanvas } from './components/ExpeditionCanvas';
+import { AlchemyLabPanel, TrapWorkshopPanel } from './components/CraftingPanels';
+import { TradeFloorPanel, FinancialsPanel } from './components/TradeAndLedgerPanels';
+import {
+  IntelAndStoryPanel,
+  ClientDirectoryPanel,
+  SpecialisationsPanel,
+  ArchivesAndCatalystPanel
+} from './components/WorldAndIntelPanels';
+import { PWAInstallButton, OfflineIndicator } from './components/PWAInstallWidgets';
+import {
+  createInitialSaveState,
+  validateSavePayload,
+  quarantinePayload,
+  loadGameWithRecovery,
+  persistAtomicSaveSafe,
+  SAVE_STORAGE_KEY,
+  SAVE_BACKUP_KEY,
+  LEGACY_SAVE_KEY
+} from './engine/saveManager';
+import {
+  executeCommercialTransaction,
+  computeRegionalFinesAndClaims,
+  resolveConsumableWear
+} from './engine/economyEngine';
+
+const WORKSPACE_NAV_ITEMS: Array<{ id: WorkspaceTab; label: string; shortLabel: string }> = [
+  { id: 'DAY_DESK', label: 'Bilateral Desk', shortLabel: 'Trade' },
+  { id: 'ALCHEMY_LAB', label: 'Alchemy Lab', shortLabel: 'Alchemy' },
+  { id: 'TRAP_WORKSHOP', label: 'Trap Workshop', shortLabel: 'Traps' },
+  { id: 'EXPEDITION_MAP', label: 'Expedition Arena', shortLabel: 'Arena' },
+  { id: 'INTEL_RUMOURS', label: 'Intel & Story', shortLabel: 'Intel' },
+  { id: 'FINANCIALS', label: 'Charters & Ledger', shortLabel: 'Charters' },
+  { id: 'CLIENT_LEDGER', label: 'Clients', shortLabel: 'Clients' },
+  { id: 'SPECIALISATIONS', label: 'Skills', shortLabel: 'Skills' },
+  { id: 'ARCHIVES_CATALYST', label: 'Catalyst & Audit', shortLabel: 'Catalyst' }
+];
+
+export default function App() {
+  const [shellState, setShellState] = useState<GameShellState>('TITLE_MENU');
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>('DAY_DESK');
+  const [activeRoomIdx, setActiveRoomIdx] = useState<number>(0);
+  const [statusBanner, setStatusBanner] = useState<string>(
+    'Morning Ledger Open: Inspect Verified Facts, brew tonics or traps, supply both sides, and resolve the scheduled expedition.'
+  );
+
+  const [a11y, setA11y] = useState<AccessibilitySettings>({
+    fontScale: 'normal',
+    colorblindLabels: true,
+    reducedMotion: false,
+    oneThumbPortraitMode: false,
+    simSpeed: 1,
+    audioMuted: false
+  });
+
+  const [loaded] = useState(() => loadGameWithRecovery(localStorage));
+  const [recoveryNotice, setRecoveryNotice] = useState(loaded.notice);
+  const saveBlocked = React.useRef(!!loaded.writeBlocked);
+  const [gameState, setGameState] = useState<GameSaveState>(loaded.state);
+
+  // Atomic save rotation on state update & app lifecycle interruption (F08, A02)
+  const persistAtomicSave = useCallback((stateToSave: GameSaveState) => {
+    if (!saveBlocked.current && !persistAtomicSaveSafe(stateToSave, localStorage)) {
+      setRecoveryNotice('Save failed validation or storage is full. Existing checkpoints preserved; export your ledger.');
+    }
+  }, []);
+
+  useEffect(() => {
+    persistAtomicSave(gameState);
+  }, [gameState, persistAtomicSave]);
+
+  // Accessible typography scaling on document element (Codex A05)
+  useEffect(() => {
+    document.documentElement.classList.remove('font-scale-large', 'font-scale-xlarge');
+    if (a11y.fontScale === 'large') {
+      document.documentElement.classList.add('font-scale-large');
+    } else if (a11y.fontScale === 'xlarge') {
+      document.documentElement.classList.add('font-scale-xlarge');
+    }
+  }, [a11y.fontScale]);
+
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        persistAtomicSave(gameState);
+      }
+    };
+    const onPageHide = () => persistAtomicSave(gameState);
+    window.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('pagehide', onPageHide);
+    return () => {
+      window.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('pagehide', onPageHide);
+    };
+  }, [gameState, persistAtomicSave]);
+
+  // Escape key to toggle Pause / Settings Modal during play
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'Escape') {
+        setShellState((prev) =>
+          prev === 'PLAYING' ? 'PAUSED' : prev === 'PAUSED' ? 'PLAYING' : prev
+        );
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  // Sync audio mute
+  useEffect(() => {
+    soundFX.muted = a11y.audioMuted;
+  }, [a11y.audioMuted]);
+
+  const isSkillUnlocked = useCallback(
+    (effectKey: string) => gameState.skills.some((s) => s.effectKey === effectKey && s.unlocked),
+    [gameState.skills]
+  );
+
+  // F01: Compute active scheduled encounter & next rotation for the current region
+  const activeRegionSchedule = useMemo(
+    () =>
+      getRegionEncounterSchedule(
+        gameState.activeRegion,
+        gameState.day,
+        gameState.masters,
+        gameState.parties,
+        gameState.scheduledMatchups
+      ),
+    [
+      gameState.activeRegion,
+      gameState.day,
+      gameState.masters,
+      gameState.parties,
+      gameState.scheduledMatchups
+    ]
+  );
+
+  // Pre-expedition deterministic forecast (Gate 4)
+  const expeditionForecast = useMemo(() => {
+    return predictExpeditionForecast(
+      gameState.day,
+      gameState.seed,
+      activeRegionSchedule.currentMaster,
+      activeRegionSchedule.currentParty,
+      gameState.products,
+      gameState.contractsToday
+    );
+  }, [
+    gameState.day,
+    gameState.seed,
+    activeRegionSchedule.currentMaster,
+    activeRegionSchedule.currentParty,
+    gameState.products,
+    gameState.contractsToday
+  ]);
+
+  const handleSelectScheduledMatchup = useCallback((masterId: string, partyId: string) => {
+    setGameState((prev) => ({
+      ...prev,
+      scheduledMatchups: {
+        ...prev.scheduledMatchups,
+        [prev.activeRegion]: { masterId, partyId }
+      }
+    }));
+  }, []);
+
+  // Load "The Basilisk Supply Chain" Scenario (Unlocks Warrens immediately & stages Grimthorn + Silver Stag)
+  const handleLoadBasiliskScenario = useCallback(() => {
+    const base = createInitialSaveState();
+    saveBlocked.current = false;
+    setRecoveryNotice(undefined);
+    base.unlockedRegions = ['cellar', 'warrens'];
+    base.activeRegion = 'warrens';
+    base.gold = 3400;
+    base.phase = 'TRADE';
+    base.scheduledMatchups.warrens = {
+      masterId: 'dm_warrens_1',
+      partyId: 'pty_warrens_1'
+    };
+    setGameState(base);
+    setShellState('PLAYING');
+    setActiveTab('DAY_DESK');
+    setStatusBanner(
+      'Scenario Loaded: Overseer Grimthorn has deployed a Cave-Basilisk + Sulphur-Fog Machine against the Silver Stag Company!'
+    );
+    soundFX.playCatalystChord();
+  }, []);
+
+  // F02 Fix: Brew Alchemy Product with Canonical Composition Identity
+  const handleBrewProduct = useCallback(
+    (product: CraftedProduct, spotCost: number, consumedIds: string[], batchSize: number) => {
+      soundFX.playBrew();
+      setGameState((prev) => {
+        const nextReagents = { ...prev.reagentInventory };
+        consumedIds.forEach((id) => {
+          if ((nextReagents[id] || 0) > 0) {
+            nextReagents[id] -= 1;
+          }
+        });
+
+        const nextProducts = mergeCraftedProductIntoInventory(prev.products, product, batchSize);
+
+        return {
+          ...prev,
+          phase: 'PREPARATION',
+          gold: prev.gold - spotCost,
+          customBrewsCount: prev.customBrewsCount + 1,
+          reagentInventory: nextReagents,
+          products: nextProducts
+        };
+      });
+      setStatusBanner(
+        `Synthesized ${batchSize}x ${product.name} [#${product.formulaSignature}] (${
+          product.sulphurVulnerable ? 'Sulphur Vulnerable' : 'Sulphur Safe'
+        }).`
+      );
+    },
+    []
+  );
+
+  // F02 Fix: Assemble Trap Product with Canonical Composition Identity
+  const handleAssembleTrap = useCallback(
+    (trapProduct: CraftedProduct, spotCost: number, consumedIds: string[]) => {
+      soundFX.playRatchet();
+      setGameState((prev) => {
+        const nextParts = { ...prev.partInventory };
+        consumedIds.forEach((id) => {
+          if ((nextParts[id] || 0) > 0) {
+            nextParts[id] -= 1;
+          }
+        });
+
+        const nextProducts = mergeCraftedProductIntoInventory(prev.products, trapProduct, 2);
+
+        return {
+          ...prev,
+          phase: 'PREPARATION',
+          gold: prev.gold - spotCost,
+          customTrapsCount: prev.customTrapsCount + 1,
+          partInventory: nextParts,
+          products: nextProducts
+        };
+      });
+      setStatusBanner(
+        `Assembled 2x ${trapProduct.name} [#${trapProduct.formulaSignature}] (Trigger: ${trapProduct.triggerMassThresholdKg}kg, DC ${trapProduct.detectionDC}).`
+      );
+    },
+    []
+  );
+
+  // Buy Wholesale Reagents / Parts
+  const handleBuyReagent = useCallback((reagent: Reagent, qty: number) => {
+    soundFX.playCoin();
+    const cost = reagent.baseCost * qty;
+    setGameState((prev) => ({
+      ...prev,
+      gold: prev.gold - cost,
+      reagentInventory: {
+        ...prev.reagentInventory,
+        [reagent.id]: (prev.reagentInventory[reagent.id] || 0) + qty
+      }
+    }));
+    setStatusBanner(`Procured ${qty}x ${reagent.name} for ${cost}g.`);
+  }, []);
+
+  const handleBuyPart = useCallback((part: TrapPart, qty: number) => {
+    soundFX.playCoin();
+    const cost = part.baseCost * qty;
+    setGameState((prev) => ({
+      ...prev,
+      gold: prev.gold - cost,
+      partInventory: {
+        ...prev.partInventory,
+        [part.id]: (prev.partInventory[part.id] || 0) + qty
+      }
+    }));
+    setStatusBanner(`Procured ${qty}x ${part.name} for ${cost}g.`);
+  }, []);
+
+  // Execute Bilateral Sale to either Dungeon Master or Adventuring Party
+  // Execute Bilateral Sale to either Dungeon Master or Adventuring Party (A01: Shared Authoritative Economy Engine)
+  const handleExecuteSale = useCallback(
+    (
+      buyerType: 'MASTER' | 'HERO',
+      buyerId: string,
+      product: CraftedProduct,
+      priceMultiplier: number,
+      warrantyBacked: boolean,
+      exclusiveDeal: boolean,
+      secretProvenance: boolean
+    ) => {
+      setGameState((prev) => {
+        const tx = executeCommercialTransaction(prev, buyerType, buyerId, product, {
+          priceMultiplier,
+          warrantyBacked,
+          exclusiveDeal,
+          secretProvenance
+        });
+
+        if (!tx.success || !tx.nextState) {
+          setStatusBanner(tx.reason || 'Transaction could not be completed.');
+          return prev;
+        }
+
+        soundFX.playCoin();
+        setStatusBanner(
+          `Sold 1x ${product.name} [#${product.formulaSignature || product.id.slice(-6)}] to ${
+            tx.contract?.buyerName || (buyerType === 'MASTER' ? 'Dungeon Master' : 'Adventuring Party')
+          } for +${tx.unitPrice}g!`
+        );
+
+        return tx.nextState;
+      });
+    },
+    []
+  );
+
+  // F01 & F04/F05 Fix: Resolve Explicitly Scheduled Expedition & Advance Day with Real Debt/Consumption Math
+  const handleLaunchExpedition = useCallback(() => {
+    setGameState((prev) => {
+      const schedule = getRegionEncounterSchedule(
+        prev.activeRegion,
+        prev.day,
+        prev.masters,
+        prev.parties,
+        prev.scheduledMatchups
+      );
+      const master = schedule.currentMaster;
+      const party = schedule.currentParty;
+
+      const report = simulateRegionExpedition(
+        prev.day,
+        prev.seed,
+        master,
+        party,
+        prev.products,
+        prev.contractsToday
+      );
+
+      // Accounting math (SIM-002 Reconstructed Economy)
+      const grossRevenue = prev.contractsToday.reduce((acc, c) => acc + c.totalRevenue, 0);
+      const cogs = prev.contractsToday.reduce((acc, c) => acc + c.unitCost * c.quantity, 0);
+      const grossMargin = grossRevenue - cogs;
+      const overheadAndStorage = 35 + prev.unlockedRegions.length * 20;
+
+      const skillKeys = prev.skills.filter((s) => s.unlocked).map((s) => s.effectKey);
+      const claimsAndFines = computeRegionalFinesAndClaims(
+        prev.activeRegion,
+        report.exclusivityBreachDetected,
+        report.warrantyClaimsTriggered,
+        skillKeys
+      );
+      const warrantyClaims = claimsAndFines.warrantyPayout;
+      const fines = claimsAndFines.breachFine;
+
+      const cheapCredit = prev.skills.some((s) => s.effectKey === 'cheap_credit' && s.unlocked);
+      const dailyInterestRate = cheapCredit ? 0.003 : 0.005;
+      const interest = Math.round(prev.debt * dailyInterestRate);
+
+      const netProfit = grossMargin - overheadAndStorage - warrantyClaims - fines - interest;
+      const rawEndingCash = prev.gold - overheadAndStorage - warrantyClaims - fines - interest;
+
+      // Remove silent 120g bailout floor: if rawEndingCash < 0, capitalize deficit into debt!
+      let endingCash = rawEndingCash;
+      let nextDebt = prev.debt;
+      let nextInsolvencyEvents = prev.insolvencyEvents || 0;
+
+      if (rawEndingCash < 0) {
+        nextDebt += Math.abs(rawEndingCash);
+        endingCash = 0;
+        nextInsolvencyEvents += 1;
+      } else if (nextDebt > 0 && netProfit > 0 && endingCash > 800) {
+        // Auto-amortize 25% of positive net profit when liquid cash > 800g
+        const autoPaydown = Math.min(nextDebt, Math.min(endingCash - 600, Math.round(netProfit * 0.25)));
+        if (autoPaydown > 0) {
+          nextDebt -= autoPaydown;
+          endingCash -= autoPaydown;
+        }
+      }
+
+      const inventoryVal = prev.products.reduce((acc, p) => acc + p.stock * p.productionCost, 0);
+      const netWorth = endingCash + inventoryVal - nextDebt;
+
+      // Update Master & Party memory + budgets + consumable wear from shared economyEngine (A03)
+      const wear = resolveConsumableWear(
+        party,
+        master,
+        report.warrantyClaimsTriggered,
+        prev.day,
+        skillKeys
+      );
+
+      const nextMasters = prev.masters.map((m) => {
+        if (m.id === master.id) {
+          const lastRoom = report.rooms[report.rooms.length - 1];
+          return {
+            ...m,
+            budget: Math.max(450, m.budget + report.masterTreasuryDelta + 320),
+            installedHazards: wear.nextInstalled,
+            installedResetCharges: wear.nextResetCharges,
+            memoryLog: [...m.memoryLog, `Day ${prev.day} After-Action: ${lastRoom.learnedByMaster}`],
+            desiredTrait: report.doubleSaleDemandCreated[0] || m.desiredTrait
+          };
+        }
+        return { ...m, budget: m.budget + 180 };
+      });
+
+      const nextParties = prev.parties.map((p) => {
+        if (p.id === party.id) {
+          const lastRoom = report.rooms[report.rooms.length - 1];
+          return {
+            ...p,
+            budget: Math.max(420, p.budget + report.partyBudgetDelta + 290),
+            trust: Math.max(15, p.trust - report.warrantyClaimsTriggered * 12),
+            equippedProducts: wear.nextEquipped,
+            memoryLog: [...p.memoryLog, `Day ${prev.day} After-Action: ${lastRoom.learnedByHeroes}`],
+            desiredCounter:
+              report.doubleSaleDemandCreated.find((d) => d.includes(p.name)) || p.desiredCounter
+          };
+        }
+        return { ...p, budget: p.budget + 160 };
+      });
+
+      // Generate new Morning Intel item from actual causal expedition outcome
+      const newFact = {
+        id: `intel_d${prev.day + 1}_${report.id}`,
+        day: prev.day + 1,
+        timestamp: '06:00 AM',
+        region: prev.activeRegion,
+        isVerifiedFact: true,
+        source: 'Expedition After-Action Audit',
+        reliabilityPct: 100,
+        headline: report.summaryHeadline,
+        detail: `${report.rooms.map((r) => r.causalExplanation).join(' ')} Emergent Demand: ${
+          report.doubleSaleDemandCreated.join(' | ') || 'Steady regional restocking.'
+        }`,
+        affectedTag: 'expedition_consequence'
+      };
+
+      return {
+        ...prev,
+        day: prev.day + 1,
+        phase: 'EVENING',
+        gold: endingCash,
+        debt: nextDebt,
+        insolvencyEvents: nextInsolvencyEvents,
+        skillPoints: prev.skillPoints + 1,
+        masters: nextMasters,
+        parties: nextParties,
+        scheduledMatchups: {
+          ...prev.scheduledMatchups,
+          [prev.activeRegion]: {
+            masterId: schedule.nextMaster.id,
+            partyId: schedule.nextParty.id
+          }
+        },
+        contractsToday: [],
+        intelFeed: [newFact, ...prev.intelFeed],
+        expeditionReports: [report, ...prev.expeditionReports],
+        financialLedger: [
+          {
+            day: prev.day,
+            grossRevenue,
+            cogs,
+            grossMargin,
+            overheadAndStorage,
+            warrantyAndClaims: warrantyClaims,
+            finesAndBribes: fines,
+            financingInterest: interest,
+            netProfit,
+            endingCash,
+          marketContext: getDailyMarketContext(prev.seed, prev.day, prev.activeRegion, prev.rulesVersion),
+            inventoryValue: inventoryVal,
+            debt: nextDebt,
+            netWorth
+          },
+          ...prev.financialLedger
+        ]
+      };
+    });
+
+    setActiveRoomIdx(0);
+    setActiveTab('EXPEDITION_MAP');
+    setStatusBanner(
+      'Expedition Resolved! Inspect the 60fps causal room replay below or press Space to step through each encounter.'
+    );
+  }, []);
+
+  // Unlock Regional Trading Charter (Cash or Bridge Financing)
+  const handleUnlockRegionCharter = useCallback(
+    (regionId: RegionId, cost: number, useBridgeLoan: boolean) => {
+      soundFX.playCatalystChord();
+      setGameState((prev) => {
+        if (prev.unlockedRegions.includes(regionId)) return prev;
+        const cheapCredit = prev.skills.some((s) => s.effectKey === 'cheap_credit' && s.unlocked);
+        const downPayment = useBridgeLoan ? Math.round(cost * (cheapCredit ? 0.2 : 0.3)) : cost;
+        const loanAdded = useBridgeLoan ? cost - downPayment : 0;
+
+        return {
+          ...prev,
+          gold: Math.max(0, prev.gold - downPayment),
+          debt: prev.debt + loanAdded,
+          unlockedRegions: [...prev.unlockedRegions, regionId],
+          activeRegion: regionId
+        };
+      });
+      setStatusBanner(
+        `Charter Unlocked: ${regionId.toUpperCase()} is now connected to your multi-region merchant network!`
+      );
+    },
+    []
+  );
+
+  // F03 Fix: Claim Solo Offline DM Paradox Catalyst (Requires Hard Mode + 2 Custom Brews + 2 Custom Traps + 2 DM & 2 Hero Sales)
+  const handleClaimSoloDmCatalyst = useCallback(() => {
+    setGameState(prev => {
+      const next=claimSoloCatalyst(prev);
+      if (next !== prev) soundFX.playCatalystChord();
+      return next;
+    });
+    setStatusBanner(
+      'Paradox Catalyst Received by Courier from Arch-Architect Vespera! Region IV: The Paradox Vault (Expert) is now permanently unlocked!'
+    );
+  }, []);
+
+  // F03 Fix: Verify & Record Offline Peer Paradox Catalyst Code (Enforces Hard-mode access & authentic courier verification)
+  const handleImportPeerCatalyst = useCallback(
+    (code: string): { valid: boolean; message: string } => {
+      const check = verifyAndParseCatalystCode(
+        code,
+        gameState.day,
+        gameState.catalystLedger,
+        gameState.unlockedRegions
+      );
+      if (!check.valid || !check.entry) {
+        return { valid: false, message: check.error || 'Invalid Catalyst Code.' };
+      }
+      soundFX.playCatalystChord();
+      const isAuthentic = check.entry.isAuthentic;
+      setGameState((prev) => ({
+        ...prev,
+        expertUnlocked: isAuthentic ? true : prev.expertUnlocked,
+        unlockedRegions:
+          isAuthentic && !prev.unlockedRegions.includes('vault')
+            ? [...prev.unlockedRegions, 'vault']
+            : prev.unlockedRegions,
+        activeRegion: isAuthentic ? 'vault' : prev.activeRegion,
+        catalystLedger: [check.entry!, ...prev.catalystLedger]
+      }));
+
+      if (isAuthentic) {
+        setStatusBanner(
+          `Verified Authentic Courier Catalyst (#${check.entry.provenanceHash})! The Paradox Vault (Expert) is now permanently unlocked!`
+        );
+        return {
+          valid: true,
+          message: `Verified Authentic Courier Catalyst from ${check.entry.senderName} (#${check.entry.provenanceHash}). The Paradox Vault is unlocked!`
+        };
+      } else {
+        setStatusBanner(
+          `Recorded Community Catalyst Code (#${check.entry.provenanceHash}) in ledger. Note: Unauthenticated casual codes do not attune to The Paradox Vault.`
+        );
+        return {
+          valid: true,
+          message: `Recorded Community Gift from ${check.entry.senderName} (#${check.entry.provenanceHash}) in gift ledger. Note: Legitimate Arch-Architect Courier commission is required to unlock Expert Mode.`
+        };
+      }
+    },
+    [gameState.day, gameState.catalystLedger, gameState.unlockedRegions]
+  );
+
+  // Basilisk Supply Chain Story Branch Decisions
+  const handleResolveBasiliskDecision = useCallback(
+    (choice: 'REFORMULATE' | 'REFUND_GUILD' | 'BRIBE_GRIMTHORN' | 'BLAME_RIVAL') => {
+      soundFX.playBrew();
+      setGameState((prev) => {
+        let goldDelta = 0;
+        let headline = '';
+        let detail = '';
+        const nextProducts = [...prev.products];
+
+        if (choice === 'REFORMULATE') {
+          const idx = nextProducts.findIndex((p) => p.id === 'prod_antidote_chelated');
+          if (idx >= 0) {
+            nextProducts[idx] = { ...nextProducts[idx], stock: nextProducts[idx].stock + 2 };
+          }
+          headline = 'Basilisk Chain: Quartz-Chelated Antidotes Deployed';
+          detail =
+            'Your Calcified Quartz formulation resisted Grimthorn’s Sulphur Fog. The Silver Stag survived and Grimthorn now wants 8kg Quartz-Wire Acid Sprayers!';
+        } else if (choice === 'REFUND_GUILD') {
+          goldDelta = -180;
+          headline = 'Basilisk Chain: Silver Stag Indemnified (-180g)';
+          detail =
+            'Full warranty restitution paid to Captain Valen Stagheart. The Guild Investigation was dropped and Hero Trust surged across the Warrens.';
+        } else if (choice === 'BRIBE_GRIMTHORN') {
+          goldDelta = 170; // -150g bribe + 320g contract retainer
+          headline = 'Basilisk Chain: Secret Ventilation Pact with Grimthorn (+170g Net)';
+          detail =
+            'Overseer Grimthorn agreed to cycle his Sulphur Fog vents at half pressure so heroes survive just long enough to buy more antidotes next week.';
+        } else {
+          headline = 'Basilisk Chain: Vane & Sons Blamed for Adulterated Bile';
+          detail =
+            'Guild inspectors fined Vane & Sons Alchemicals for selling unbuffered antidotes, shifting 6% regional market share to your house.';
+        }
+
+        return {
+          ...prev,
+          gold: Math.max(0, prev.gold + goldDelta),
+          products: nextProducts,
+          basiliskChainStage: Math.min(3, prev.basiliskChainStage + 1),
+          intelFeed: [
+            {
+              id: `intel_basilisk_d${prev.day}_${choice}`,
+              day: prev.day,
+              timestamp: '12:30 PM',
+              region: 'warrens',
+              isVerifiedFact: true,
+              source: 'Basilisk Supply Chain Dossier',
+              reliabilityPct: 100,
+              headline,
+              detail,
+              affectedTag: 'basilisk_chain'
+            },
+            ...prev.intelFeed
+          ]
+        };
+      });
+      setStatusBanner(`Basilisk Supply Chain Updated: Decision [${choice}] recorded in world ledger.`);
+    },
+    []
+  );
+
+  const latestReport = useMemo(
+    () => gameState.expeditionReports[0] || null,
+    [gameState.expeditionReports]
+  );
+
+  // F01 Fix: Preview report uses the exact scheduled encounter if no expedition has been resolved on this day yet
+  const activeCanvasReport = useMemo(() => {
+    if (latestReport && latestReport.day === gameState.day - 1 && gameState.phase === 'EVENING') {
+      return latestReport;
+    }
+    return simulateRegionExpedition(
+      gameState.day,
+      gameState.seed,
+      activeRegionSchedule.currentMaster,
+      activeRegionSchedule.currentParty,
+      gameState.products,
+      gameState.contractsToday
+    );
+  }, [
+    latestReport,
+    gameState.day,
+    gameState.phase,
+    gameState.seed,
+    activeRegionSchedule.currentMaster,
+    activeRegionSchedule.currentParty,
+    gameState.products,
+    gameState.contractsToday
+  ]);
+
+  const masterSalesCount = useMemo(
+    () => gameState.contractHistory.filter((c) => c.buyerType === 'MASTER').length,
+    [gameState.contractHistory]
+  );
+  const heroSalesCount = useMemo(
+    () => gameState.contractHistory.filter((c) => c.buyerType === 'HERO').length,
+    [gameState.contractHistory]
+  );
+
+  const fontScaleClass =
+    a11y.fontScale === 'xlarge'
+      ? 'text-[17px]'
+      : a11y.fontScale === 'large'
+      ? 'text-[15.5px]'
+      : 'text-sm';
+
+  if (shellState === 'TITLE_MENU') {
+    return (
+      <>
+        <OfflineIndicator />
+        {recoveryNotice && <div role="alert" className="p-3 bg-amber-950 text-amber-200 text-sm">{recoveryNotice}</div>}
+        <TitleScreen
+          hasSavedGame={saveBlocked.current || gameState.day > 1 || gameState.contractHistory.length > 0}
+          savedDay={gameState.day}
+          savedGold={gameState.gold}
+          reducedMotion={a11y.reducedMotion}
+          onStartNewOrContinue={() => setShellState('PLAYING')}
+          onLoadBasiliskScenario={handleLoadBasiliskScenario}
+          onResetSave={() => {
+            const fresh = createInitialSaveState();
+            setGameState(fresh);
+            saveBlocked.current = false;
+            setRecoveryNotice(undefined);
+            persistAtomicSave(fresh);
+          }}
+        />
+      </>
+    );
+  }
+
+  return (
+    <div
+      className={`w-screen h-screen overflow-hidden bg-[#0B0E14] text-[#F1F5F9] flex flex-col select-none font-scale-${a11y.fontScale} ${fontScaleClass}`}
+    >
+      <OfflineIndicator />
+
+      {/* Top Bar Contract: Zone 1 Brand Wordmark — Zone 2 Concise Nav Links — Zone 3 Primary Action */}
+      <header className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-4 px-4 sm:px-5 py-2.5 bg-[#0B0E14] border-b border-slate-800/90 shrink-0">
+        <button
+          onClick={() => setShellState('TITLE_MENU')}
+          className="font-display text-base sm:text-lg font-bold tracking-tight text-amber-400 hover:text-amber-300 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+        >
+          Trap &amp; Tonic
+        </button>
+
+        {!a11y.oneThumbPortraitMode && (
+          <nav className="hidden lg:flex items-center gap-5 text-xs font-medium text-slate-300">
+            {WORKSPACE_NAV_ITEMS.map((item) => (
+              <button
+                key={item.id}
+                onClick={() => setActiveTab(item.id)}
+                className={`py-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                  activeTab === item.id
+                    ? 'text-amber-400 underline underline-offset-8 decoration-2 font-semibold'
+                    : 'text-slate-400 hover:text-slate-100'
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </nav>
+        )}
+
+        <div className="flex items-center gap-2 shrink-0">
+          <PWAInstallButton />
+          <button
+            onClick={() => setShellState('PAUSED')}
+            className="min-h-[40px] px-3.5 py-1.5 text-xs font-mono font-semibold text-slate-950 bg-amber-500 hover:bg-amber-400 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+          >
+            Options &amp; A11y (Esc)
+          </button>
+        </div>
+      </header>
+
+      {/* Main Scrollable Game Shell Container (Supports One-Thumb Portrait Mode or Full 1440px Desktop) */}
+      {recoveryNotice && <div role="alert" className="px-4 py-3 text-sm text-amber-200 bg-amber-950 border border-amber-700 break-words">{recoveryNotice}</div>}
+      <main
+        className={`flex-1 overflow-y-auto overflow-x-hidden max-w-full px-4 sm:px-6 pt-4 pb-24 lg:pb-6 space-y-5 ${
+          a11y.oneThumbPortraitMode ? 'max-w-md mx-auto w-full border-x border-slate-800 pb-28' : 'max-w-[1440px] mx-auto w-full'
+        }`}
+      >
+        {/* Perimeter Telemetry Strip & Active Dungeon Region Selector */}
+        <div className="flex flex-wrap items-center justify-between gap-4 pb-3 border-b border-slate-800/80">
+          <div className="flex flex-wrap items-center gap-2 text-xs font-mono tabular-nums text-slate-300">
+            <span className="text-amber-400 font-semibold">DAY {gameState.day} / 120+</span>
+            <span aria-hidden="true">·</span>
+            <span>PHASE: {gameState.phase}</span>
+            <span aria-hidden="true">·</span>
+            <span className="text-emerald-400 font-semibold">CASH: {gameState.gold.toLocaleString()}g</span>
+            {gameState.debt > 0 && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span className="text-rose-400">DEBT: {gameState.debt.toLocaleString()}g</span>
+              </>
+            )}
+            <span aria-hidden="true">·</span>
+            <span className="text-sky-400">SKILL PTS: {gameState.skillPoints} SP</span>
+            <span aria-hidden="true">·</span>
+            <span>
+              EXPERT VAULT: {gameState.expertUnlocked ? 'UNLOCKED (CATALYST VERIFIED)' : 'LOCKED'}
+            </span>
+          </div>
+
+          {/* Connected Realm Switcher */}
+          <div className="flex flex-wrap items-center gap-1 p-1 bg-[#131822] border border-slate-800 rounded-lg">
+            {REGIONS_DATA.map((reg) => {
+              const unlocked = gameState.unlockedRegions.includes(reg.id);
+              const isSelected = gameState.activeRegion === reg.id;
+              return (
+                <button
+                  key={reg.id}
+                  onClick={() => {
+                    if (unlocked) {
+                      setGameState((prev) => ({ ...prev, activeRegion: reg.id }));
+                    } else {
+                      setActiveTab(reg.requiresCatalyst ? 'ARCHIVES_CATALYST' : 'FINANCIALS');
+                    }
+                  }}
+                  className={`min-h-[36px] px-2.5 py-1 text-xs font-mono rounded transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                    isSelected
+                      ? 'bg-amber-600 text-slate-950 font-semibold'
+                      : unlocked
+                      ? 'text-slate-300 hover:text-white'
+                      : 'text-slate-500 hover:text-slate-300'
+                  }`}
+                >
+                  {reg.roman}. {reg.name.replace("The Rat King's ", '').replace('The ', '')}{' '}
+                  {!unlocked ? '(Locked)' : ''}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Live Action Consequence Banner with Explicit Scheduled Matchup */}
+        <div className="px-4 py-2.5 bg-[#131822] border border-slate-800 rounded-lg flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
+          <div className="space-y-0.5 min-w-0 flex-1">
+            <div className="text-slate-200">{statusBanner}</div>
+            <div className="text-amber-400/90 truncate">
+              Scheduled Matchup: {activeRegionSchedule.currentParty.name} vs {activeRegionSchedule.currentMaster.name} · Next: {activeRegionSchedule.nextParty.name} vs {activeRegionSchedule.nextMaster.name}
+            </div>
+          </div>
+          <div className="flex items-center gap-3 shrink-0 max-w-full">
+            <button
+              onClick={handleLaunchExpedition}
+              className="min-h-[44px] px-4 py-2 bg-amber-600 hover:bg-amber-500 text-slate-950 font-semibold rounded-lg cursor-pointer max-w-full text-left sm:text-center text-xs font-mono leading-tight whitespace-normal"
+            >
+              Run Scheduled Expedition ({activeRegionSchedule.currentParty.name} vs {activeRegionSchedule.currentMaster.name}) →
+            </button>
+          </div>
+        </div>
+
+        {/* Active Workspace View */}
+        {activeTab === 'EXPEDITION_MAP' && (
+          <div className="space-y-4">
+            {/* Pre-Expedition Deterministic Causal Forecast (Gate 4) */}
+            <div className="p-4 bg-[#131822] border border-slate-800 rounded-xl space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span className="text-xs font-mono font-semibold text-slate-200">
+                    PRE-EXPEDITION INTELLIGENCE &amp; CAUSAL FORECAST
+                  </span>
+                </div>
+                <div className="text-xs font-mono text-amber-400">
+                  {expeditionForecast.summaryHeadline}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {expeditionForecast.predictedRooms.map((rm) => (
+                  <div
+                    key={`forecast_${rm.roomIndex}`}
+                    className="p-3 bg-[#0B0E14] border border-slate-800/80 rounded-lg text-xs font-mono space-y-1.5"
+                  >
+                    <div className="flex items-center justify-between text-slate-400">
+                      <span>CHAMBER 0{rm.roomIndex}</span>
+                      <span
+                        className={
+                          rm.outcome === 'TRAP_BYPASSED' || rm.outcome === 'COUNTER_SUCCEEDED'
+                            ? 'text-emerald-400 font-semibold'
+                            : rm.outcome === 'REACTION_FAILURE'
+                            ? 'text-amber-400 font-semibold'
+                            : 'text-rose-400 font-semibold'
+                        }
+                      >
+                        {rm.outcome}
+                      </span>
+                    </div>
+                    <div className="text-slate-200 font-semibold truncate">{rm.hazardName}</div>
+                    <div className="text-slate-400 text-[11px] leading-relaxed">
+                      {rm.causalExplanation}
+                    </div>
+                    {rm.chemicalReaction?.includes('PARADOX MASS-INVERSION') && (
+                      <div className="text-amber-400 text-[11px] font-semibold bg-amber-950/40 p-1.5 rounded border border-amber-800/50">
+                        ⚠ Inversion Detonation: Lightweight morph triggers inverted polarity!
+                      </div>
+                    )}
+                    {rm.chemicalReaction?.includes('Temporal Rewind Loop') && (
+                      <div className="text-cyan-400 text-[11px] bg-cyan-950/40 p-1.5 rounded border border-cyan-800/50">
+                        ↻ Temporal module: one paid charge prevents one wear removal; settlement persists after the raid.
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* 60fps Live Dungeon Expedition Viewport with >=85% Unobstructed Playfield & pointer-events:none HUD */}
+            <div className="relative w-full h-[380px] sm:h-[430px] rounded-xl overflow-hidden border border-slate-800 bg-[#0B0E14]">
+              <ExpeditionCanvas
+                mode="EXPEDITION_LIVE"
+                report={activeCanvasReport}
+                activeRoomIdx={activeRoomIdx}
+                simSpeed={a11y.simSpeed}
+                reducedMotion={a11y.reducedMotion}
+                onRoomAdvance={setActiveRoomIdx}
+              />
+
+            </div>
+            {/* Status and room controls occupy their own flow; never cover the touch playfield. */}
+            <div className="p-3 bg-[#0B0E14] border border-slate-800 rounded-lg space-y-3">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="bg-[#0B0E14]/90 border border-slate-800 px-3 py-1.5 rounded text-xs font-mono tabular-nums text-slate-200">
+                    <span>
+                      RAID: {activeCanvasReport.partyName} vs {activeCanvasReport.masterName}
+                    </span>
+                    <span className="mx-2">·</span>
+                    <span className="text-amber-400">SEED #{activeCanvasReport.seed}</span>
+                  </div>
+
+                  <div className="bg-[#0B0E14]/90 border border-slate-800 px-3 py-1.5 rounded text-xs font-mono tabular-nums text-emerald-400">
+                    LOOTED: +{activeCanvasReport.totalLooted}g · MASTER Δ:{' '}
+                    {activeCanvasReport.masterTreasuryDelta >= 0
+                      ? `+${activeCanvasReport.masterTreasuryDelta}g`
+                      : `${activeCanvasReport.masterTreasuryDelta}g`}
+                  </div>
+                </div>
+
+                <div className="flex items-end justify-between gap-4">
+                  <div className="bg-[#0B0E14]/90 border border-slate-800 px-3 py-1.5 rounded text-xs font-mono text-slate-300">
+                    Drag to pan · WASD / arrows · Space steps rooms ({activeRoomIdx + 1}/{activeCanvasReport.rooms.length})
+                  </div>
+                  <div className="pointer-events-auto flex items-center gap-2">
+                    {activeCanvasReport.rooms.map((rm, idx) => (
+                      <button
+                        key={rm.roomIndex}
+                        onClick={() => setActiveRoomIdx(idx)}
+                        className={`min-h-[38px] px-3 py-1 text-xs font-mono rounded cursor-pointer whitespace-nowrap shrink-0 ${
+                          activeRoomIdx === idx
+                            ? 'bg-amber-500 text-slate-950 font-semibold'
+                            : 'bg-[#0B0E14] text-slate-300 border border-slate-700'
+                        }`}
+                      >
+                        Room {rm.roomIndex}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+            </div>
+
+            {/* Causal Chain After-Action Breakdown */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {activeCanvasReport.rooms.map((rm, idx) => (
+                <div
+                  key={rm.roomIndex}
+                  onClick={() => setActiveRoomIdx(idx)}
+                  className={`p-4 rounded-xl border cursor-pointer transition-colors ${
+                    activeRoomIdx === idx
+                      ? 'bg-[#131822] border-amber-500/80'
+                      : 'bg-[#131822] border-slate-800 hover:border-slate-700'
+                  }`}
+                >
+                  <div className="flex items-center justify-between text-xs font-mono text-slate-400 mb-1.5">
+                    <span>
+                      ROOM 0{rm.roomIndex} · {rm.roomName}
+                    </span>
+                    <span
+                      className={
+                        rm.outcome === 'TRAP_BYPASSED' || rm.outcome === 'COUNTER_SUCCEEDED'
+                          ? 'text-emerald-400 font-semibold'
+                          : rm.outcome === 'REACTION_FAILURE'
+                          ? 'text-amber-400 font-semibold'
+                          : 'text-rose-400 font-semibold'
+                      }
+                    >
+                      {rm.outcome}
+                    </span>
+                  </div>
+                  <div className="text-sm font-semibold text-slate-100 mb-1">{rm.hazardName}</div>
+                  {rm.chemicalReaction && (
+                    <div className="text-xs font-mono text-amber-300 bg-[#0B0E14] border border-slate-800 p-2 rounded mb-2">
+                      {rm.chemicalReaction}
+                    </div>
+                  )}
+                  {rm.chemicalReaction?.includes('Temporal Rewind Loop') && (
+                    <div className="text-xs font-mono text-cyan-300 bg-cyan-950/40 border border-cyan-800/60 p-2 rounded mb-2">
+                      <div className="font-semibold mb-1">↻ Temporal Rewind Chronology:</div>
+                      <div className="text-[11px] text-cyan-200/90 space-y-0.5">
+                        <div>· t=0.00s: Intruder steps onto pressure trigger</div>
+                        <div>· t=0.18s: Detonation sequence actuates</div>
+                        <div>· t=0.35s: Closed timelike loop re-cocks trigger mechanism</div>
+                      </div>
+                    </div>
+                  )}
+                  <p className="text-xs text-slate-300 leading-relaxed mb-2">{rm.causalExplanation}</p>
+                  <div className="text-[11px] font-mono text-slate-400 space-y-1 pt-2 border-t border-slate-800/80">
+                    <div>Hero Adaptation: {rm.learnedByHeroes}</div>
+                    <div>Master Adaptation: {rm.learnedByMaster}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'DAY_DESK' && (
+          <TradeFloorPanel
+            day={gameState.day}
+            seed={gameState.seed}
+            activeRegion={gameState.activeRegion}
+            products={gameState.products}
+            masters={gameState.masters}
+            parties={gameState.parties}
+            scheduledMasterId={activeRegionSchedule.currentMaster.id}
+            scheduledPartyId={activeRegionSchedule.currentParty.id}
+            nextMasterName={activeRegionSchedule.nextMaster.name}
+            nextPartyName={activeRegionSchedule.nextParty.name}
+            contractsToday={gameState.contractsToday}
+            bilateralSkillUnlocked={isSkillUnlocked('bilateral_margin')}
+            secretShippingUnlocked={isSkillUnlocked('secret_shipping')}
+            unlockedSkills={gameState.skills.filter((s) => s.unlocked).map((s) => s.effectKey)}
+            tradeTerms={gameState.tradeTerms}
+            onUpdateTradeTerms={(terms) =>
+              setGameState((prev) => ({
+                ...prev,
+                tradeTerms: terms
+              }))
+            }
+            onSelectScheduledMatchup={handleSelectScheduledMatchup}
+            onExecuteSale={handleExecuteSale}
+            onLaunchExpedition={handleLaunchExpedition}
+          />
+        )}
+
+        {activeTab === 'ALCHEMY_LAB' && (
+          <AlchemyLabPanel
+            gold={gameState.gold}
+            unlockedRegions={gameState.unlockedRegions}
+            reagentInventory={gameState.reagentInventory}
+            chelateSkillUnlocked={isSkillUnlocked('chelate_boost')}
+            bonusYieldUnlocked={isSkillUnlocked('bonus_brew_yield')}
+            onBrewProduct={handleBrewProduct}
+            onBuyReagent={handleBuyReagent}
+          />
+        )}
+
+        {activeTab === 'TRAP_WORKSHOP' && (
+          <TrapWorkshopPanel
+            gold={gameState.gold}
+            unlockedRegions={gameState.unlockedRegions}
+            partInventory={gameState.partInventory}
+            zincGuardUnlocked={isSkillUnlocked('zinc_guard')}
+            onAssembleTrap={handleAssembleTrap}
+            onBuyPart={handleBuyPart}
+          />
+        )}
+
+        {activeTab === 'INTEL_RUMOURS' && (
+          <IntelAndStoryPanel
+            day={gameState.day}
+            gold={gameState.gold}
+            intelFeed={gameState.intelFeed}
+            basiliskChainStage={gameState.basiliskChainStage}
+            blackspireUnlocked={gameState.unlockedRegions.includes('blackspire')}
+            blackspireResolution={gameState.blackspireResolution}
+            onResolveBasiliskDecision={handleResolveBasiliskDecision}
+            onChooseBlackspireEnding={(ending) => {
+              setGameState((prev) => ({ ...prev, blackspireResolution: ending }));
+              setStatusBanner(`House Political Doctrine Set: ${ending.replace('_', ' ')}.`);
+            }}
+          />
+        )}
+
+        {activeTab === 'FINANCIALS' && (
+          <FinancialsPanel
+            gold={gameState.gold}
+            debt={gameState.debt}
+            unlockedRegions={gameState.unlockedRegions}
+            expertUnlocked={gameState.expertUnlocked}
+            ledger={gameState.financialLedger}
+            rivals={gameState.rivals}
+            cheapCreditUnlocked={isSkillUnlocked('cheap_credit')}
+            onUnlockRegionCharter={handleUnlockRegionCharter}
+            onPayDownDebt={(amt) => {
+              setGameState((prev) => ({
+                ...prev,
+                gold: prev.gold - amt,
+                debt: Math.max(0, prev.debt - amt)
+              }));
+              setStatusBanner(`Repaid ${amt}g of Dwarven Bridge Financing.`);
+            }}
+          />
+        )}
+
+        {activeTab === 'CLIENT_LEDGER' && (
+          <ClientDirectoryPanel masters={gameState.masters} parties={gameState.parties} />
+        )}
+
+        {activeTab === 'SPECIALISATIONS' && (
+          <SpecialisationsPanel
+            skillPoints={gameState.skillPoints}
+            skills={gameState.skills}
+            onUnlockSkill={(skillId) => {
+              soundFX.playCoin();
+              setGameState((prev) => {
+                const target = prev.skills.find((s) => s.id === skillId);
+                if (!target || target.unlocked || prev.skillPoints < target.costPoints) return prev;
+                return {
+                  ...prev,
+                  skillPoints: prev.skillPoints - target.costPoints,
+                  skills: prev.skills.map((s) => (s.id === skillId ? { ...s, unlocked: true } : s))
+                };
+              });
+            }}
+          />
+        )}
+
+        {activeTab === 'ARCHIVES_CATALYST' && (
+          <ArchivesAndCatalystPanel
+            day={gameState.day}
+            seed={gameState.seed}
+            blackspireUnlocked={gameState.unlockedRegions.includes('blackspire')}
+            expertUnlocked={gameState.expertUnlocked}
+            catalystLedger={gameState.catalystLedger}
+            expeditionReports={gameState.expeditionReports}
+            customBrewsCount={gameState.customBrewsCount}
+            customTrapsCount={gameState.customTrapsCount}
+            masterSalesCount={masterSalesCount}
+            heroSalesCount={heroSalesCount}
+            onClaimSoloDmCatalyst={handleClaimSoloDmCatalyst}
+            onImportPeerCatalyst={handleImportPeerCatalyst}
+            onExportSaveJson={() => JSON.stringify(gameState)}
+            onImportSaveJson={(jsonStr) => {
+              const check = validateSavePayload(jsonStr);
+              if (!check.valid || !check.state) {
+                try { quarantinePayload(localStorage, jsonStr); } catch { /* preserve checkpoints even when quota is full */ }
+                setRecoveryNotice(`Import refused: ${check.error}. Current campaign unchanged.`);
+                return false;
+              }
+              if (!persistAtomicSaveSafe(check.state, localStorage)) return false;
+              saveBlocked.current = false;
+              setGameState(check.state);
+              setRecoveryNotice(`Imported validated ledger: Day ${check.state.day}.`);
+              return true;
+            }}
+          />
+        )}
+      </main>
+
+      {/* F06/F07 Fix: Ergonomic Bottom Thumb Navigation Bar for Mobile (<1024px) & One-Thumb Portrait Mode (Includes ALL 9 Tabs including Skills!) */}
+      <nav
+        aria-label="Mobile and One-Thumb Workspace Navigation"
+        className={`${
+          a11y.oneThumbPortraitMode ? 'flex' : 'flex lg:hidden'
+        } fixed bottom-0 inset-x-0 z-40 bg-[#0B0E14]/95 border-t border-slate-800 px-2 py-1.5 overflow-x-auto items-center justify-start sm:justify-center gap-1`}
+      >
+        {WORKSPACE_NAV_ITEMS.map((item) => (
+          <button
+            key={item.id}
+            onClick={() => setActiveTab(item.id)}
+            className={`min-h-[44px] min-w-[64px] px-2.5 py-1.5 text-xs font-mono rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer flex flex-col items-center justify-center ${
+              activeTab === item.id
+                ? 'bg-amber-600 text-slate-950 font-bold'
+                : 'bg-[#131822] text-slate-300 hover:text-white border border-slate-800'
+            }`}
+          >
+            <span>{item.shortLabel}</span>
+          </button>
+        ))}
+      </nav>
+
+      {/* Pause & Accessibility Modal */}
+      {shellState === 'PAUSED' && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+          <div className="bg-[#131822] border border-slate-700 rounded-xl max-w-lg w-full p-6 space-y-5">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h2 className="font-display text-xl font-bold text-slate-100">
+                Ledger Paused &amp; Accessibility Settings
+              </h2>
+              <button
+                onClick={() => setShellState('PLAYING')}
+                className="text-xs font-mono text-slate-400 hover:text-white cursor-pointer"
+              >
+                Resume (Esc)
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-400">
+              Accessibility controls are completely separate from gameplay difficulty and never restrict Paradox Catalyst or Expert Vault eligibility.
+            </p>
+
+            <div className="space-y-3 text-xs font-mono">
+              <div className="flex items-center justify-between p-3 bg-[#0B0E14] border border-slate-800 rounded-lg">
+                <span>Typography Scale</span>
+                <div className="flex gap-1">
+                  {(['normal', 'large', 'xlarge'] as const).map((sz) => (
+                    <button
+                      key={sz}
+                      onClick={() => setA11y((prev) => ({ ...prev, fontScale: sz }))}
+                      className={`min-h-[36px] px-2.5 py-1 rounded cursor-pointer ${
+                        a11y.fontScale === sz ? 'bg-amber-600 text-slate-950 font-semibold' : 'bg-slate-800 text-slate-300'
+                      }`}
+                    >
+                      {sz.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between p-3 bg-[#0B0E14] border border-slate-800 rounded-lg">
+                <span>Expedition Simulation Speed</span>
+                <div className="flex gap-1">
+                  {([1, 2, 4] as const).map((spd) => (
+                    <button
+                      key={spd}
+                      onClick={() => setA11y((prev) => ({ ...prev, simSpeed: spd }))}
+                      className={`min-h-[36px] px-2.5 py-1 rounded cursor-pointer ${
+                        a11y.simSpeed === spd ? 'bg-amber-600 text-slate-950 font-semibold' : 'bg-slate-800 text-slate-300'
+                      }`}
+                    >
+                      {spd}x
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <label className="flex items-center justify-between p-3 bg-[#0B0E14] border border-slate-800 rounded-lg cursor-pointer">
+                <span>One-Thumb Portrait Layout &amp; Bottom Dock</span>
+                <input
+                  type="checkbox"
+                  checked={a11y.oneThumbPortraitMode}
+                  onChange={(e) => setA11y((prev) => ({ ...prev, oneThumbPortraitMode: e.target.checked }))}
+                  className="accent-amber-500"
+                />
+              </label>
+
+              <label className="flex items-center justify-between p-3 bg-[#0B0E14] border border-slate-800 rounded-lg cursor-pointer">
+                <span>Reduced Animation &amp; Zero Camera Shake</span>
+                <input
+                  type="checkbox"
+                  checked={a11y.reducedMotion}
+                  onChange={(e) => setA11y((prev) => ({ ...prev, reducedMotion: e.target.checked }))}
+                  className="accent-amber-500"
+                />
+              </label>
+
+              <label className="flex items-center justify-between p-3 bg-[#0B0E14] border border-slate-800 rounded-lg cursor-pointer">
+                <span>Mute Procedural Web Audio Synth</span>
+                <input
+                  type="checkbox"
+                  checked={a11y.audioMuted}
+                  onChange={(e) => setA11y((prev) => ({ ...prev, audioMuted: e.target.checked }))}
+                  className="accent-amber-500"
+                />
+              </label>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 pt-3 border-t border-slate-800">
+              <button
+                onClick={() => setShellState('TITLE_MENU')}
+                className="min-h-[42px] px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-mono rounded-lg cursor-pointer"
+              >
+                Return to Title Screen
+              </button>
+              <button
+                onClick={() => setShellState('PLAYING')}
+                className="min-h-[42px] px-5 py-2 bg-amber-600 hover:bg-amber-500 text-slate-950 font-semibold text-xs font-mono rounded-lg cursor-pointer"
+              >
+                Resume Campaign
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+==== END FILE src/App.tsx ====
+
+==== BEGIN FILE src/components/CraftingPanels.tsx BLOB a3ee958efd8d0b5d666621603498954e82666d73 ====
+import { isTrapTriggeredByMass } from '../engine/simulation';
+import React, { useState, useMemo } from 'react';
+import {
+  Reagent,
+  TrapPart,
+  CraftedProduct,
+  RegionId,
+  ReagentSlotRole,
+  TrapSlotRole
+} from '../types/game';
+import { REAGENTS_CATALOG, TRAP_PARTS_CATALOG } from '../data/catalog';
+import { synthesizeAlchemyProduct, assembleTrapProduct } from '../engine/simulation';
+
+interface AlchemyLabProps {
+  gold: number;
+  unlockedRegions: RegionId[];
+  reagentInventory: Record<string, number>;
+  chelateSkillUnlocked: boolean;
+  bonusYieldUnlocked: boolean;
+  onBrewProduct: (product: CraftedProduct, cost: number, consumedIds: string[], batchSize: number) => void;
+  onBuyReagent: (reagent: Reagent, qty: number) => void;
+}
+
+export const AlchemyLabPanel: React.FC<AlchemyLabProps> = ({
+  gold,
+  unlockedRegions,
+  reagentInventory,
+  chelateSkillUnlocked,
+  bonusYieldUnlocked,
+  onBrewProduct,
+  onBuyReagent
+}) => {
+  const availableReagents = useMemo(
+    () => REAGENTS_CATALOG.filter((r) => unlockedRegions.includes(r.regionOrigin)),
+    [unlockedRegions]
+  );
+
+  const bases = availableReagents.filter((r) => r.role === 'base');
+  const actives = availableReagents.filter((r) => r.role === 'active');
+  const carriers = availableReagents.filter((r) => r.role === 'carrier');
+  const stabilisers = availableReagents.filter((r) => r.role === 'stabiliser');
+  const catalysts = availableReagents.filter((r) => r.role === 'catalyst');
+
+  const [baseId, setBaseId] = useState(bases[1]?.id || bases[0].id);
+  const [activeId, setActiveId] = useState(actives[0].id);
+  const [carrierId, setCarrierId] = useState(carriers[1]?.id || carriers[0].id);
+  const [stabiliserId, setStabiliserId] = useState(stabilisers[0].id);
+  const [catalystId, setCatalystId] = useState(catalysts[0].id);
+  const [customName, setCustomName] = useState('');
+  const [marketFilter, setMarketFilter] = useState<ReagentSlotRole | 'all'>('all');
+
+  const selectedTuple = useMemo((): [Reagent, Reagent, Reagent, Reagent, Reagent] => {
+    const b = REAGENTS_CATALOG.find((r) => r.id === baseId) || bases[0];
+    const a = REAGENTS_CATALOG.find((r) => r.id === activeId) || actives[0];
+    const c = REAGENTS_CATALOG.find((r) => r.id === carrierId) || carriers[0];
+    const s = REAGENTS_CATALOG.find((r) => r.id === stabiliserId) || stabilisers[0];
+    const k = REAGENTS_CATALOG.find((r) => r.id === catalystId) || catalysts[0];
+    return [b, a, c, s, k];
+  }, [baseId, activeId, carrierId, stabiliserId, catalystId, bases, actives, carriers, stabilisers, catalysts]);
+
+  const previewProduct = useMemo(
+    () => synthesizeAlchemyProduct(selectedTuple, customName, chelateSkillUnlocked),
+    [selectedTuple, customName, chelateSkillUnlocked]
+  );
+
+  const loadPreset = (preset: 'unstabilised_antidote' | 'chelated_antidote' | 'chicken_morph' | 'charcoal_breather' | 'rust_solvent') => {
+    if (preset === 'unstabilised_antidote') {
+      setBaseId('reg_base_02');
+      setActiveId('reg_act_01');
+      setCarrierId('reg_car_02');
+      setStabiliserId('reg_stb_01');
+      setCatalystId('reg_cat_01');
+      setCustomName('Standard Basilisk Antidote (Unstabilised)');
+    } else if (preset === 'chelated_antidote') {
+      setBaseId('reg_base_02');
+      setActiveId('reg_act_01');
+      setCarrierId(unlockedRegions.includes('warrens') ? 'reg_car_05' : 'reg_car_02');
+      setStabiliserId(unlockedRegions.includes('warrens') ? 'reg_stb_03' : 'reg_stb_02');
+      setCatalystId('reg_cat_02');
+      setCustomName('Quartz-Chelated Basilisk Antidote');
+    } else if (preset === 'chicken_morph') {
+      setBaseId(unlockedRegions.includes('warrens') ? 'reg_base_06' : 'reg_base_02');
+      setActiveId('reg_act_02');
+      setCarrierId(unlockedRegions.includes('warrens') ? 'reg_car_04' : 'reg_car_02');
+      setStabiliserId('reg_stb_02');
+      setCatalystId(unlockedRegions.includes('warrens') ? 'reg_cat_04' : 'reg_cat_01');
+      setCustomName('Bantam Chicken-Morph Draught');
+    } else if (preset === 'charcoal_breather') {
+      setBaseId('reg_base_02');
+      setActiveId(unlockedRegions.includes('warrens') ? 'reg_act_06' : 'reg_act_04');
+      setCarrierId(unlockedRegions.includes('warrens') ? 'reg_car_05' : 'reg_car_03');
+      setStabiliserId('reg_stb_02');
+      setCatalystId('reg_cat_01');
+      setCustomName('Charcoal Alchemical Breather Tonic');
+    } else if (preset === 'rust_solvent') {
+      setBaseId(unlockedRegions.includes('warrens') ? 'reg_base_03' : 'reg_base_04');
+      setActiveId(unlockedRegions.includes('warrens') ? 'reg_act_08' : 'reg_act_03');
+      setCarrierId(unlockedRegions.includes('warrens') ? 'reg_car_06' : 'reg_car_03');
+      setStabiliserId('reg_stb_01');
+      setCatalystId(unlockedRegions.includes('warrens') ? 'reg_cat_03' : 'reg_cat_01');
+      setCustomName('Rust-Monster Gear Solvent Bomb');
+    }
+  };
+
+  // Calculate missing reagent cost if not in stock
+  const missingCost = selectedTuple.reduce((acc, r) => {
+    const have = reagentInventory[r.id] || 0;
+    return acc + (have > 0 ? 0 : r.baseCost);
+  }, 0);
+
+  const batchUnits = bonusYieldUnlocked ? 3 : 2;
+
+  const handleSynthesize = () => {
+    if (gold < missingCost) return;
+    onBrewProduct(
+      previewProduct,
+      missingCost,
+      selectedTuple.map((r) => r.id),
+      batchUnits
+    );
+    setCustomName('');
+  };
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      {/* Left 7 Cols: 5-Slot Alchemy Reaction Bench */}
+      <div className="lg:col-span-7 bg-[#131822] border border-slate-800 rounded-xl p-5 flex flex-col justify-between">
+        <div>
+          <div className="flex flex-wrap items-center justify-between gap-2 pb-4 mb-4 border-b border-slate-800">
+            <div>
+              <h2 className="font-display text-lg font-bold text-slate-100">
+                01. Five-Slot Alchemical Reaction Bench
+              </h2>
+              <p className="text-xs text-slate-400">
+                Combine Base + Active Reagent + Carrier + Stabiliser + Catalyst. Traits interact deterministically.
+              </p>
+            </div>
+            <span className="text-xs font-mono text-emerald-400 tabular-nums">
+              {availableReagents.length} / 48 Reagents Unlocked
+            </span>
+          </div>
+
+          {/* Formula Quick-Presets for Double-Sale Chains */}
+          <div className="mb-5">
+            <p className="text-xs font-mono text-slate-400 mb-2">Load Canonical Formula Template:</p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => loadPreset('chelated_antidote')}
+                className="px-3 py-1.5 text-xs font-medium bg-slate-800 hover:bg-slate-700 text-emerald-300 rounded-md transition-colors cursor-pointer whitespace-nowrap shrink-0"
+              >
+                Quartz-Chelated Antidote (Sulphur Immune)
+              </button>
+              <button
+                onClick={() => loadPreset('chicken_morph')}
+                className="px-3 py-1.5 text-xs font-medium bg-slate-800 hover:bg-slate-700 text-amber-300 rounded-md transition-colors cursor-pointer whitespace-nowrap shrink-0"
+              >
+                Bantam Chicken-Morph (-65kg Mass)
+              </button>
+              <button
+                onClick={() => loadPreset('charcoal_breather')}
+                className="px-3 py-1.5 text-xs font-medium bg-slate-800 hover:bg-slate-700 text-sky-300 rounded-md transition-colors cursor-pointer whitespace-nowrap shrink-0"
+              >
+                Charcoal Sulphur Breather
+              </button>
+              <button
+                onClick={() => loadPreset('rust_solvent')}
+                className="px-3 py-1.5 text-xs font-medium bg-slate-800 hover:bg-slate-700 text-rose-300 rounded-md transition-colors cursor-pointer whitespace-nowrap shrink-0"
+              >
+                Rust-Monster Solvent Bomb
+              </button>
+            </div>
+          </div>
+
+          {/* 5 Reagent Slot Selectors */}
+          <div className="space-y-3">
+            {[
+              { label: 'Slot 1 · Base Solvent', list: bases, val: baseId, set: setBaseId },
+              { label: 'Slot 2 · Active Reagent', list: actives, val: activeId, set: setActiveId },
+              { label: 'Slot 3 · Delivery Carrier', list: carriers, val: carrierId, set: setCarrierId },
+              { label: 'Slot 4 · Chemical Stabiliser', list: stabilisers, val: stabiliserId, set: setStabiliserId },
+              { label: 'Slot 5 · Reaction Catalyst', list: catalysts, val: catalystId, set: setCatalystId }
+            ].map((slot) => {
+              const currentObj = REAGENTS_CATALOG.find((r) => r.id === slot.val) || slot.list[0];
+              const inStock = reagentInventory[currentObj.id] || 0;
+              return (
+                <div key={slot.label} className="p-3 bg-[#0B0E14] border border-slate-800/90 rounded-lg">
+                  <div className="flex items-center justify-between gap-2 mb-1.5">
+                    <label className="text-xs font-mono text-slate-300">{slot.label}</label>
+                    <span className="text-xs font-mono text-slate-400 tabular-nums">
+                      Stock: {inStock} · Direct Buy: {currentObj.baseCost}g · Grade: {currentObj.grade}
+                    </span>
+                  </div>
+                  <select
+                    value={slot.val}
+                    onChange={(e) => slot.set(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-amber-500"
+                  >
+                    {slot.list.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.name} ({r.baseCost}g · Potency {r.traits.potency} · Stab {r.traits.stability}
+                        {r.traits.massDeltaKg !== 0 ? ` · Mass ${r.traits.massDeltaKg}kg` : ''}
+                        {r.traits.sulphurSensitivity !== 0 ? ` · SulphurSens ${r.traits.sulphurSensitivity}` : ''})
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-slate-400 mt-1.5">{currentObj.description}</p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Custom Blueprint Name & Brew Action */}
+        <div className="mt-5 pt-4 border-t border-slate-800 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+          <input
+            type="text"
+            value={customName}
+            onChange={(e) => setCustomName(e.target.value)}
+            placeholder={`Custom Name (default: ${previewProduct.name})`}
+            className="flex-1 bg-[#0B0E14] border border-slate-700 rounded-lg px-3.5 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-amber-500"
+          />
+          <button
+            onClick={handleSynthesize}
+            disabled={gold < missingCost}
+            className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-semibold text-sm rounded-lg transition-colors cursor-pointer whitespace-nowrap shrink-0"
+          >
+            Brew Batch (+{batchUnits} Units · {missingCost}g Spot Cost)
+          </button>
+        </div>
+      </div>
+
+      {/* Right 5 Cols: Stoichiometric Assay Preview & Reagent Procurement */}
+      <div className="lg:col-span-5 flex flex-col gap-6">
+        <div className="bg-[#131822] border border-slate-800 rounded-xl p-5">
+          <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-800">
+            <h3 className="font-display text-base font-bold text-slate-100">
+              02. Stoichiometric Reaction Assay
+            </h3>
+            <span className="text-xs font-mono text-amber-400">
+              Target: {previewProduct.targetAudience} · #{previewProduct.formulaSignature}
+            </span>
+          </div>
+
+          <div className="mb-4">
+            <div className="text-base font-semibold text-slate-100 mb-1">
+              {previewProduct.name}{' '}
+              <span className="text-xs font-mono text-emerald-400">
+                [Formula #{previewProduct.formulaSignature}]
+              </span>
+            </div>
+            <div className="text-xs font-mono text-slate-400 tabular-nums">
+              Canonical ID: {previewProduct.id} · Unit Cost: {previewProduct.productionCost}g · Suggested Retail: {previewProduct.suggestedPrice}g
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 mb-4 text-xs font-mono tabular-nums">
+            <div className="p-2.5 bg-[#0B0E14] border border-slate-800 rounded">
+              <span className="text-slate-400 block">Potency / Yield</span>
+              <span className="text-sm font-semibold text-emerald-400">{previewProduct.potency} / 100</span>
+            </div>
+            <div className="p-2.5 bg-[#0B0E14] border border-slate-800 rounded">
+              <span className="text-slate-400 block">Chemical Stability</span>
+              <span className="text-sm font-semibold text-sky-400">{previewProduct.stability} / 100</span>
+            </div>
+            <div className="p-2.5 bg-[#0B0E14] border border-slate-800 rounded">
+              <span className="text-slate-400 block">Hero Mass Shift</span>
+              <span className="text-sm font-semibold text-amber-300">
+                {previewProduct.massEffectKg === 0 ? '0kg (Normal)' : `${previewProduct.massEffectKg}kg (Featherweight)`}
+              </span>
+            </div>
+            <div className="p-2.5 bg-[#0B0E14] border border-slate-800 rounded">
+              <span className="text-slate-400 block">Sulphur Fog Reaction</span>
+              <span className={`text-sm font-semibold ${previewProduct.sulphurVulnerable ? 'text-rose-400' : 'text-emerald-400'}`}>
+                {previewProduct.sulphurVulnerable ? 'VULNERABLE (-55%)' : 'STABILISED'}
+              </span>
+            </div>
+          </div>
+
+          <div className="space-y-2 text-xs text-slate-300 bg-[#0B0E14] border border-slate-800 rounded-lg p-3">
+            <div className="font-mono text-slate-400">Causal Expedition Interactions:</div>
+            {previewProduct.reactionNotes.map((note, idx) => (
+              <p key={idx} className="leading-relaxed text-slate-200">
+                • {note}
+              </p>
+            ))}
+          </div>
+        </div>
+
+        {/* Wholesale Reagent Stockpile Drawer */}
+        <div className="bg-[#131822] border border-slate-800 rounded-xl p-5 flex-1">
+          <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-800">
+            <h3 className="font-display text-sm font-bold text-slate-100">
+              Reagent Wholesale Exchange
+            </h3>
+            <div className="flex gap-1">
+              {(['all', 'base', 'active', 'stabiliser'] as const).map((role) => (
+                <button
+                  key={role}
+                  onClick={() => setMarketFilter(role)}
+                  className={`px-2 py-1 text-xs font-mono rounded cursor-pointer whitespace-nowrap shrink-0 ${
+                    marketFilter === role ? 'bg-amber-600 text-slate-950 font-semibold' : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  {role.toUpperCase()}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="max-h-56 overflow-y-auto space-y-2 pr-1">
+            {availableReagents
+              .filter((r) => marketFilter === 'all' || r.role === marketFilter)
+              .map((r) => (
+                <div
+                  key={r.id}
+                  className="flex items-center justify-between gap-2 p-2 bg-[#0B0E14] border border-slate-800/80 rounded text-xs"
+                >
+                  <div className="min-w-0">
+                    <div className="font-medium text-slate-200 truncate">{r.name}</div>
+                    <div className="text-slate-400 font-mono tabular-nums">
+                      {r.role} · {r.grade} · Held: {reagentInventory[r.id] || 0}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => onBuyReagent(r, 3)}
+                    disabled={gold < r.baseCost * 3}
+                    className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-amber-300 font-mono rounded cursor-pointer whitespace-nowrap shrink-0 tabular-nums"
+                  >
+                    Buy 3 ({r.baseCost * 3}g)
+                  </button>
+                </div>
+              ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+interface TrapWorkshopProps {
+  gold: number;
+  unlockedRegions: RegionId[];
+  partInventory: Record<string, number>;
+  zincGuardUnlocked: boolean;
+  onAssembleTrap: (product: CraftedProduct, cost: number, consumedIds: string[]) => void;
+  onBuyPart: (part: TrapPart, qty: number) => void;
+}
+
+export const TrapWorkshopPanel: React.FC<TrapWorkshopProps> = ({
+  gold,
+  unlockedRegions,
+  partInventory,
+  zincGuardUnlocked,
+  onAssembleTrap,
+  onBuyPart
+}) => {
+  const availableParts = useMemo(
+    () => TRAP_PARTS_CATALOG.filter((p) => unlockedRegions.includes(p.regionTier)),
+    [unlockedRegions]
+  );
+
+  const triggers = availableParts.filter((p) => p.role === 'trigger');
+  const concealments = availableParts.filter((p) => p.role === 'concealment');
+  const deliveries = availableParts.filter((p) => p.role === 'delivery');
+  const payloads = availableParts.filter((p) => p.role === 'payload');
+  const powers = availableParts.filter((p) => p.role === 'power');
+  const resets = availableParts.filter((p) => p.role === 'reset');
+
+  const [triggerId, setTriggerId] = useState(triggers[0].id);
+  const [concealId, setConcealId] = useState(concealments[0].id);
+  const [deliveryId, setDeliveryId] = useState(deliveries[0].id);
+  const [payloadId, setPayloadId] = useState(payloads[0].id);
+  const [powerId, setPowerId] = useState(powers[0].id);
+  const [resetId, setResetId] = useState(resets[0].id);
+  const [customName, setCustomName] = useState('');
+  const [partFilter, setPartFilter] = useState<TrapSlotRole | 'all'>('all');
+
+  const selectedTuple = useMemo((): [TrapPart, TrapPart, TrapPart, TrapPart, TrapPart, TrapPart] => {
+    const tr = TRAP_PARTS_CATALOG.find((p) => p.id === triggerId) || triggers[0];
+    const cn = TRAP_PARTS_CATALOG.find((p) => p.id === concealId) || concealments[0];
+    const dl = TRAP_PARTS_CATALOG.find((p) => p.id === deliveryId) || deliveries[0];
+    const py = TRAP_PARTS_CATALOG.find((p) => p.id === payloadId) || payloads[0];
+    const pw = TRAP_PARTS_CATALOG.find((p) => p.id === powerId) || powers[0];
+    const rs = TRAP_PARTS_CATALOG.find((p) => p.id === resetId) || resets[0];
+    return [tr, cn, dl, py, pw, rs];
+  }, [triggerId, concealId, deliveryId, payloadId, powerId, resetId, triggers, concealments, deliveries, payloads, powers, resets]);
+
+  const previewTrap = useMemo(
+    () => assembleTrapProduct(selectedTuple, customName, zincGuardUnlocked),
+    [selectedTuple, customName, zincGuardUnlocked]
+  );
+
+  const loadTrapPreset = (preset: 'plate_45kg' | 'sulphur_fog_machine' | 'basilisk_lair' | 'quartz_8kg_acid') => {
+    if (preset === 'plate_45kg') {
+      setTriggerId('part_trg_01');
+      setConcealId('part_con_02');
+      setDeliveryId('part_del_03');
+      setPayloadId('part_pay_01');
+      setPowerId('part_pow_02');
+      setResetId('part_rst_02');
+      setCustomName('45kg Pressure-Plate Spike Battery');
+    } else if (preset === 'sulphur_fog_machine') {
+      setTriggerId(unlockedRegions.includes('warrens') ? 'part_trg_07' : 'part_trg_01');
+      setConcealId(unlockedRegions.includes('warrens') ? 'part_con_04' : 'part_con_02');
+      setDeliveryId(unlockedRegions.includes('warrens') ? 'part_del_04' : 'part_del_02');
+      setPayloadId(unlockedRegions.includes('warrens') ? 'part_pay_05' : 'part_pay_02');
+      setPowerId(unlockedRegions.includes('warrens') ? 'part_pow_04' : 'part_pow_02');
+      setResetId(unlockedRegions.includes('warrens') ? 'part_rst_03' : 'part_rst_02');
+      setCustomName('Pneumatic Sulphur-Fog Machine');
+    } else if (preset === 'basilisk_lair') {
+      setTriggerId('part_trg_02');
+      setConcealId(unlockedRegions.includes('warrens') ? 'part_con_03' : 'part_con_02');
+      setDeliveryId('part_del_02');
+      setPayloadId(unlockedRegions.includes('warrens') ? 'part_pay_04' : 'part_pay_03');
+      setPowerId('part_pow_02');
+      setResetId('part_rst_02');
+      setCustomName('Armored Cave-Basilisk Lair Module');
+    } else if (preset === 'quartz_8kg_acid') {
+      setTriggerId(unlockedRegions.includes('warrens') ? 'part_trg_05' : 'part_trg_02');
+      setConcealId(unlockedRegions.includes('warrens') ? 'part_con_05' : 'part_con_02');
+      setDeliveryId(unlockedRegions.includes('warrens') ? 'part_del_06' : 'part_del_03');
+      setPayloadId(unlockedRegions.includes('warrens') ? 'part_pay_06' : 'part_pay_03');
+      setPowerId(unlockedRegions.includes('warrens') ? 'part_pow_05' : 'part_pow_02');
+      setResetId(unlockedRegions.includes('warrens') ? 'part_rst_04' : 'part_rst_02');
+      setCustomName('8kg Quartz-Wire Vitriol Sprayer');
+    }
+  };
+
+  const missingCost = selectedTuple.reduce((acc, p) => {
+    const have = partInventory[p.id] || 0;
+    return acc + (have > 0 ? 0 : p.baseCost);
+  }, 0);
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      {/* Left 7 Cols: 6-Slot Modular Trap Engineering Bench */}
+      <div className="lg:col-span-7 bg-[#131822] border border-slate-800 rounded-xl p-5 flex flex-col justify-between">
+        <div>
+          <div className="flex flex-wrap items-center justify-between gap-2 pb-4 mb-4 border-b border-slate-800">
+            <div>
+              <h2 className="font-display text-lg font-bold text-slate-100">
+                01. Six-Slot Modular Trap &amp; Hazard Rig
+              </h2>
+              <p className="text-xs text-slate-400">
+                Assemble Trigger + Concealment + Delivery + Payload + Power + Reset. Trigger mass rules govern expedition physics.
+              </p>
+            </div>
+            <span className="text-xs font-mono text-amber-400 tabular-nums">
+              {availableParts.length} / 64 Modules Unlocked
+            </span>
+          </div>
+
+          <div className="mb-4">
+            <p className="text-xs font-mono text-slate-400 mb-2">Load Canonical Engineering Blueprint:</p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => loadTrapPreset('plate_45kg')}
+                className="px-3 py-1.5 text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-md cursor-pointer whitespace-nowrap shrink-0"
+              >
+                45kg Spike Plate (Bypassable by Chicken-Morph)
+              </button>
+              <button
+                onClick={() => loadTrapPreset('sulphur_fog_machine')}
+                className="px-3 py-1.5 text-xs font-medium bg-slate-800 hover:bg-slate-700 text-amber-300 rounded-md cursor-pointer whitespace-nowrap shrink-0"
+              >
+                Sulphur-Fog Machine (Weakens Antidotes)
+              </button>
+              <button
+                onClick={() => loadTrapPreset('basilisk_lair')}
+                className="px-3 py-1.5 text-xs font-medium bg-slate-800 hover:bg-slate-700 text-rose-300 rounded-md cursor-pointer whitespace-nowrap shrink-0"
+              >
+                Cave-Basilisk Petrification Lair
+              </button>
+              <button
+                onClick={() => loadTrapPreset('quartz_8kg_acid')}
+                className="px-3 py-1.5 text-xs font-medium bg-slate-800 hover:bg-slate-700 text-emerald-300 rounded-md cursor-pointer whitespace-nowrap shrink-0"
+              >
+                8kg Hair-Trigger Acid (Catches Chicken-Morph!)
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {[
+              { label: '1. Trigger Sensor', list: triggers, val: triggerId, set: setTriggerId },
+              { label: '2. Concealment Shroud', list: concealments, val: concealId, set: setConcealId },
+              { label: '3. Delivery Mechanism', list: deliveries, val: deliveryId, set: setDeliveryId },
+              { label: '4. Hazard Payload', list: payloads, val: payloadId, set: setPayloadId },
+              { label: '5. Power Actuator', list: powers, val: powerId, set: setPowerId },
+              { label: '6. Reset & Maintenance', list: resets, val: resetId, set: setResetId }
+            ].map((slot) => {
+              const currentPart = TRAP_PARTS_CATALOG.find((p) => p.id === slot.val) || slot.list[0];
+              const held = partInventory[currentPart.id] || 0;
+              return (
+                <div key={slot.label} className="p-3 bg-[#0B0E14] border border-slate-800 rounded-lg">
+                  <div className="flex items-center justify-between text-xs font-mono text-slate-300 mb-1">
+                    <span>{slot.label}</span>
+                    <span className="text-slate-400 tabular-nums">
+                      Held: {held} · {currentPart.baseCost}g
+                    </span>
+                  </div>
+                  <select
+                    value={slot.val}
+                    onChange={(e) => slot.set(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-amber-500"
+                  >
+                    {slot.list.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} ({p.baseCost}g · DC {p.detectionDC} · Leth {p.lethality}
+                        {p.massThresholdKg !== undefined ? ` · >=${p.massThresholdKg}kg` : ''})
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[11px] text-slate-400 mt-1 line-clamp-2">{currentPart.description}</p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="mt-5 pt-4 border-t border-slate-800 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+          <input
+            type="text"
+            value={customName}
+            onChange={(e) => setCustomName(e.target.value)}
+            placeholder={`Custom Blueprint Name (default: ${previewTrap.name})`}
+            className="flex-1 bg-[#0B0E14] border border-slate-700 rounded-lg px-3.5 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-amber-500"
+          />
+          <button
+            onClick={() => {
+              if (gold < missingCost) return;
+              onAssembleTrap(
+                previewTrap,
+                missingCost,
+                selectedTuple.map((p) => p.id)
+              );
+              setCustomName('');
+            }}
+            disabled={gold < missingCost}
+            className="px-5 py-2.5 bg-amber-600 hover:bg-amber-500 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-semibold text-sm rounded-lg transition-colors cursor-pointer whitespace-nowrap shrink-0"
+          >
+            Assemble 2 Units ({missingCost}g Spot Cost)
+          </button>
+        </div>
+      </div>
+
+      {/* Right 5 Cols: Prototype Mass & Counterplay Test Rig + Part Procurement */}
+      <div className="lg:col-span-5 flex flex-col gap-6">
+        <div className="bg-[#131822] border border-slate-800 rounded-xl p-5">
+          <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-800">
+            <h3 className="font-display text-base font-bold text-slate-100">
+              02. Prototype Mass &amp; Counterplay Test Rig
+            </h3>
+            <span className="text-xs font-mono text-rose-400">
+              For Dungeon Masters · #{previewTrap.formulaSignature}
+            </span>
+          </div>
+
+          <div className="mb-4">
+            <div className="text-base font-semibold text-slate-100">
+              {previewTrap.name}{' '}
+              <span className="text-xs font-mono text-amber-400">
+                [Build #{previewTrap.formulaSignature}]
+              </span>
+            </div>
+            <div className="text-xs font-mono text-slate-400 tabular-nums">
+              Canonical ID: {previewTrap.id} · Assembly Cost: {previewTrap.productionCost}g · Suggested Contract Price: {previewTrap.suggestedPrice}g
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2.5 mb-4 text-xs font-mono tabular-nums">
+            <div className="p-2.5 bg-[#0B0E14] border border-slate-800 rounded">
+              <span className="text-slate-400 block">Lethality</span>
+              <span className="text-sm font-semibold text-rose-400">{previewTrap.potency}</span>
+            </div>
+            <div className="p-2.5 bg-[#0B0E14] border border-slate-800 rounded">
+              <span className="text-slate-400 block">Deterrence</span>
+              <span className="text-sm font-semibold text-amber-400">{previewTrap.stability}</span>
+            </div>
+            <div className="p-2.5 bg-[#0B0E14] border border-slate-800 rounded">
+              <span className="text-slate-400 block">Detection DC</span>
+              <span className="text-sm font-semibold text-sky-400">DC {previewTrap.detectionDC}</span>
+            </div>
+          </div>
+
+          {previewTrap.recipeComponents.includes('part_rst_09') && <p className="text-sm text-amber-200 mb-3">Each purchased installation includes one temporal rewind. It prevents one wear removal, consumes that charge, then wears normally. A new paid installation replenishes it.</p>}
+          {/* Mass Trigger Calibration vs Chicken-Morph Test */}
+          <div className="p-3 bg-[#0B0E14] border border-slate-800 rounded-lg mb-4 text-xs">
+            <div className="font-mono text-slate-300 mb-1.5">
+              Trigger Calibration: {previewTrap.recipeComponents.includes('part_trg_12') ? 'Inversion: under 25kg' : `${previewTrap.triggerMassThresholdKg}kg floor threshold`}
+            </div>
+            <div className="flex items-center justify-between text-slate-400 font-mono tabular-nums py-1 border-b border-slate-800/70">
+              <span>Standard Vanguard (~86kg):</span>
+              <span className="font-semibold">{isTrapTriggeredByMass(previewTrap, 86) ? 'TRIGGERS TRAP' : 'BYPASSES SENSOR'}</span>
+            </div>
+            <div className="flex items-center justify-between text-slate-400 font-mono tabular-nums py-1">
+              <span>Chicken-Morphed Hero (~21kg):</span>
+              <span
+                className={
+                  !isTrapTriggeredByMass(previewTrap, 21)
+                    ? 'text-emerald-400 font-semibold'
+                    : 'text-rose-400 font-semibold'
+                }
+              >
+                {!isTrapTriggeredByMass(previewTrap, 21)
+                  ? 'BYPASSES PLATE (<Threshold!)'
+                  : 'TRIGGERS SENSOR'}
+              </span>
+            </div>
+          </div>
+
+          <div className="space-y-1.5 text-xs text-slate-300">
+            <div className="font-mono text-slate-400">Published Counterplay Routes ({previewTrap.counterClasses.join(' · ')}):</div>
+            {previewTrap.reactionNotes.map((n, i) => (
+              <p key={i} className="text-slate-300">
+                • {n}
+              </p>
+            ))}
+          </div>
+        </div>
+
+        {/* Machine Parts Wholesale Exchange */}
+        <div className="bg-[#131822] border border-slate-800 rounded-xl p-5 flex-1">
+          <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-800">
+            <h3 className="font-display text-sm font-bold text-slate-100">
+              Foundry Module Supply
+            </h3>
+            <div className="flex gap-1">
+              {(['all', 'trigger', 'payload', 'reset'] as const).map((role) => (
+                <button
+                  key={role}
+                  onClick={() => setPartFilter(role)}
+                  className={`px-2 py-1 text-xs font-mono rounded cursor-pointer whitespace-nowrap shrink-0 ${
+                    partFilter === role ? 'bg-amber-600 text-slate-950 font-semibold' : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  {role.toUpperCase()}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="max-h-52 overflow-y-auto space-y-2 pr-1">
+            {availableParts
+              .filter((p) => partFilter === 'all' || p.role === partFilter)
+              .map((p) => (
+                <div
+                  key={p.id}
+                  className="flex items-center justify-between gap-2 p-2 bg-[#0B0E14] border border-slate-800/80 rounded text-xs"
+                >
+                  <div className="min-w-0">
+                    <div className="font-medium text-slate-200 truncate">{p.name}</div>
+                    <div className="text-slate-400 font-mono tabular-nums">
+                      {p.role} · DC {p.detectionDC} · Held: {partInventory[p.id] || 0}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => onBuyPart(p, 2)}
+                    disabled={gold < p.baseCost * 2}
+                    className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-amber-300 font-mono rounded cursor-pointer whitespace-nowrap shrink-0 tabular-nums"
+                  >
+                    Buy 2 ({p.baseCost * 2}g)
+                  </button>
+                </div>
+              ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+==== END FILE src/components/CraftingPanels.tsx ====
+
+==== BEGIN FILE src/components/TradeAndLedgerPanels.tsx BLOB 1cd96a6e416de68e7c8f4088c1aebd6d81e7caac ====
+import { getDailyMarketContext } from '../engine/marketContext';
+import React, { useState, useEffect } from 'react';
+import {
+  CraftedProduct,
+  DungeonMaster,
+  AdventuringParty,
+  SaleContract,
+  RegionId,
+  FinancialRecord,
+  RivalHouse
+} from '../types/game';
+import { REGIONS_DATA } from '../data/world';
+import { computeQuotation } from '../engine/economyEngine';
+
+interface TradeFloorProps {
+  day: number;
+  seed: number;
+  activeRegion: RegionId;
+  products: CraftedProduct[];
+  masters: DungeonMaster[];
+  parties: AdventuringParty[];
+  scheduledMasterId: string;
+  scheduledPartyId: string;
+  nextMasterName: string;
+  nextPartyName: string;
+  contractsToday: SaleContract[];
+  bilateralSkillUnlocked: boolean;
+  secretShippingUnlocked: boolean;
+  unlockedSkills?: string[];
+  tradeTerms?: {
+    priceMultiplier: number;
+    warrantyBacked: boolean;
+    exclusiveDeal: boolean;
+    secretProvenance: boolean;
+  };
+  onUpdateTradeTerms?: (terms: {
+    priceMultiplier: number;
+    warrantyBacked: boolean;
+    exclusiveDeal: boolean;
+    secretProvenance: boolean;
+  }) => void;
+  onSelectScheduledMatchup: (masterId: string, partyId: string) => void;
+  onExecuteSale: (
+    buyerType: 'MASTER' | 'HERO',
+    buyerId: string,
+    product: CraftedProduct,
+    priceMultiplier: number,
+    warrantyBacked: boolean,
+    exclusiveDeal: boolean,
+    secretProvenance: boolean
+  ) => void;
+  onLaunchExpedition: () => void;
+}
+
+export const TradeFloorPanel: React.FC<TradeFloorProps> = ({
+  day,
+  seed,
+  activeRegion,
+  products,
+  masters,
+  parties,
+  scheduledMasterId,
+  scheduledPartyId,
+  nextMasterName,
+  nextPartyName,
+  contractsToday,
+  bilateralSkillUnlocked,
+  secretShippingUnlocked,
+  unlockedSkills = [],
+  tradeTerms,
+  onUpdateTradeTerms,
+  onSelectScheduledMatchup,
+  onExecuteSale,
+  onLaunchExpedition
+}) => {
+  const regionMasters = masters.filter((m) => m.region === activeRegion);
+  const regionParties = parties.filter((p) => p.region === activeRegion);
+
+  // F08 Fix: Initialize from persisted tradeTerms in gameState so switching workspaces preserves settings!
+  const [pricePct, setPricePct] = useState<number>(() =>
+    tradeTerms?.priceMultiplier ? Math.round(tradeTerms.priceMultiplier * 100) : 100
+  );
+  const [warranty, setWarranty] = useState<boolean>(() =>
+    tradeTerms?.warrantyBacked !== undefined ? tradeTerms.warrantyBacked : false
+  );
+  const [exclusive, setExclusive] = useState<boolean>(() =>
+    tradeTerms?.exclusiveDeal !== undefined ? tradeTerms.exclusiveDeal : false
+  );
+  const [secretMark, setSecretMark] = useState<boolean>(() =>
+    tradeTerms?.secretProvenance !== undefined
+      ? tradeTerms.secretProvenance
+      : secretShippingUnlocked
+  );
+
+  const updateTerms = (newPrice: number, newWar: boolean, newEx: boolean, newSec: boolean) => {
+    setPricePct(newPrice);
+    setWarranty(newWar);
+    setExclusive(newEx);
+    setSecretMark(newSec);
+    if (onUpdateTradeTerms) {
+      onUpdateTradeTerms({
+        priceMultiplier: newPrice / 100,
+        warrantyBacked: newWar,
+        exclusiveDeal: newEx,
+        secretProvenance: newSec
+      });
+    }
+  };
+
+  const activeMaster =
+    regionMasters.find((m) => m.id === scheduledMasterId) || regionMasters[0] || masters[0];
+  const activeParty =
+    regionParties.find((p) => p.id === scheduledPartyId) || regionParties[0] || parties[0];
+
+  const masterProducts = products.filter(
+    (p) => (p.targetAudience === 'MASTER' || p.targetAudience === 'BOTH') && p.stock > 0
+  );
+  const heroProducts = products.filter(
+    (p) => (p.targetAudience === 'HERO' || p.targetAudience === 'BOTH') && p.stock > 0
+  );
+
+  const effectiveMultiplier =
+    (pricePct / 100) *
+    (warranty ? 1.12 : 1) *
+    (exclusive ? 1.25 : 1) *
+    (bilateralSkillUnlocked ? 1.1 : 1);
+
+  return (
+    <div className="space-y-5">
+      {/* F01 Fix: Explicit Scheduled Expedition Matchup & Rotation Schedule Banner */}
+      <div className="bg-[#131822] border border-amber-500/40 rounded-xl p-4 flex flex-wrap items-center justify-between gap-4">
+        <div className="space-y-1">
+          <div className="flex flex-wrap items-center gap-2 text-xs font-mono">
+            <span className="px-2 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded font-semibold">
+              SCHEDULED EXPEDITION (DAY {day})
+            </span>
+            <span className="text-slate-100 font-semibold">
+              {activeParty.name} (Raiders) vs {activeMaster.name} (Lair Owner)
+            </span>
+          </div>
+          <p className="text-xs text-slate-400 font-mono">
+            Next Scheduled Rotation (Day {day + 1}):{' '}
+            <span className="text-slate-300">
+              {nextPartyName} vs {nextMasterName}
+            </span>{' '}
+            · Selecting a client below locks them as today’s active expedition participant.
+          </p>
+        </div>
+
+        <button
+          onClick={onLaunchExpedition}
+          className="min-h-[42px] px-4 py-2 bg-amber-600 hover:bg-amber-500 text-slate-950 font-mono font-semibold text-xs rounded-lg transition-colors cursor-pointer whitespace-nowrap shrink-0"
+        >
+          Resolve Scheduled Raid ({activeParty.name} vs {activeMaster.name}) →
+        </button>
+      </div>
+
+      {/* Negotiation Terms Bar */}
+      <div className="bg-[#131822] border border-slate-800 rounded-xl p-4 flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h2 className="font-display text-base font-bold text-slate-100">
+            Bilateral Contract Terms · Day {day} · Market ×{getDailyMarketContext(seed, day, activeRegion).factor.toFixed(3)}
+          </h2>
+          <p className="text-xs text-slate-400">
+            Supply {activeMaster.name} on the left and {activeParty.name} on the right before resolving their encounter.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3 text-xs font-mono">
+          <div className="flex items-center gap-1 bg-[#0B0E14] border border-slate-800 rounded-lg p-1">
+            {[
+              { label: '85% Fair', val: 85 },
+              { label: '100% List', val: 100 },
+              { label: '125% Premium', val: 125 }
+            ].map((tier) => (
+              <button
+                key={tier.val}
+                onClick={() => updateTerms(tier.val, warranty, exclusive, secretMark)}
+                className={`min-h-[36px] px-2.5 py-1 rounded cursor-pointer whitespace-nowrap shrink-0 ${
+                  pricePct === tier.val ? 'bg-amber-600 text-slate-950 font-semibold' : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                {tier.label}
+              </button>
+            ))}
+          </div>
+
+          <label className="flex items-center gap-1.5 text-slate-300 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={warranty}
+              onChange={(e) => updateTerms(pricePct, e.target.checked, exclusive, secretMark)}
+              className="accent-amber-500"
+            />
+            <span>Warranty (+12% Price, Refund on Failure)</span>
+          </label>
+
+          <label className="flex items-center gap-1.5 text-slate-300 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={exclusive}
+              onChange={(e) => updateTerms(pricePct, warranty, e.target.checked, secretMark)}
+              className="accent-amber-500"
+            />
+            <span>Exclusivity (+22% Price)</span>
+          </label>
+
+          <label className="flex items-center gap-1.5 text-slate-300 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={secretMark}
+              onChange={(e) => updateTerms(pricePct, warranty, exclusive, e.target.checked)}
+              className="accent-emerald-500"
+            />
+            <span>Null-Wax Secret Provenance (-35g Fee)</span>
+          </label>
+        </div>
+      </div>
+
+      {/* Split Bilateral Desk: Dungeon Master vs Adventuring Party */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+        {/* Left 6 Cols: Dungeon Master Procurement */}
+        <div className="lg:col-span-6 bg-[#131822] border border-slate-800 rounded-xl p-5 flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between gap-2 pb-3 mb-4 border-b border-slate-800">
+              <div>
+                <span className="text-xs font-mono text-rose-400 block">
+                  SCHEDULED DUNGEON MASTER · DEFENDER
+                </span>
+                <h3 className="font-display text-lg font-bold text-slate-100">{activeMaster.name}</h3>
+                <p className="text-xs text-slate-400">{activeMaster.title}</p>
+              </div>
+              <select
+                aria-label="Scheduled Dungeon Master"
+                value={activeMaster.id}
+                onChange={(e) => onSelectScheduledMatchup(e.target.value, activeParty.id)}
+                className="bg-[#0B0E14] border border-slate-700 rounded px-3 py-2 text-xs text-slate-200 font-mono"
+              >
+                {regionMasters.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name} ({m.budget}g)
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Master Metrics */}
+            <div className="grid grid-cols-4 gap-2 mb-4 text-xs font-mono tabular-nums">
+              <div className="p-2 bg-[#0B0E14] border border-slate-800 rounded">
+                <span className="text-slate-400 block">Treasury</span>
+                <span className="text-amber-400 font-semibold">{activeMaster.budget}g</span>
+              </div>
+              <div className="p-2 bg-[#0B0E14] border border-slate-800 rounded">
+                <span className="text-slate-400 block">Deterrence</span>
+                <span className="text-rose-400 font-semibold">{activeMaster.deterrenceScore}/100</span>
+              </div>
+              <div className="p-2 bg-[#0B0E14] border border-slate-800 rounded">
+                <span className="text-slate-400 block">Visitor Raid %</span>
+                <span className="text-sky-400 font-semibold">{activeMaster.visitorTraffic}%</span>
+              </div>
+              <div className="p-2 bg-[#0B0E14] border border-slate-800 rounded">
+                <span className="text-slate-400 block">Trust</span>
+                <span className="text-emerald-400 font-semibold">{activeMaster.trust}/100</span>
+              </div>
+            </div>
+
+            <div className="p-3 bg-[#0B0E14] border border-slate-800 rounded-lg mb-4 text-xs space-y-1">
+              <div className="font-mono text-amber-300">Wanted Hazard Profile: {activeMaster.desiredTrait}</div>
+              <div className="font-mono text-slate-400">
+                Installed Hazards ({activeMaster.installedHazards.length}/3):{' '}
+                {activeMaster.installedHazards
+                  .map((hid) => products.find((p) => p.id === hid)?.name || hid)
+                  .join(' · ') || 'Default Spike Plate'}
+              </div>
+              <p className="text-slate-300">{activeMaster.memoryLog[activeMaster.memoryLog.length - 1]}</p>
+            </div>
+
+            <div className="text-xs font-mono text-slate-400 mb-2">
+              Available Traps &amp; Monster Hazards in Stock ({masterProducts.length}):
+            </div>
+            <div className="space-y-2.5 max-h-64 overflow-y-auto pr-1">
+              {masterProducts.length === 0 ? (
+                <div className="p-4 bg-[#0B0E14] border border-slate-800 rounded text-xs text-slate-400">
+                  No traps in stock. Assemble traps in the Trap Workshop first.
+                </div>
+              ) : (
+                masterProducts.map((prod) => {
+                  const quote = computeQuotation(prod, activeMaster, 'MASTER', {
+                    priceMultiplier: pricePct / 100,
+                    warrantyBacked: warranty,
+                    exclusiveDeal: exclusive,
+                    secretProvenance: secretMark,
+                    day,
+                    seed,
+                    unlockedSkills
+                  });
+                  const askPrice = quote.unitPrice;
+                  const canAfford = quote.canAfford;
+                  const acceptable = quote.acceptable;
+                  const sigLabel = prod.formulaSignature || prod.id.slice(-6).toUpperCase();
+                  return (
+                    <div
+                      key={prod.id}
+                      className="p-3 bg-[#0B0E14] border border-slate-800 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                    >
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold text-slate-100 break-words">
+                          {prod.name}{' '}
+                          <span className="text-[11px] font-mono text-amber-400">[#{sigLabel}]</span>
+                        </div>
+                        <div className="text-xs font-mono text-slate-400 tabular-nums">
+                          Stock: {prod.stock} · Lethality {prod.potency} · DC {prod.detectionDC} · Trigger{' '}
+                          {prod.triggerMassThresholdKg}kg
+                        </div>
+                        <div className="text-[11px] text-slate-400 mt-0.5 break-words">
+                          {prod.reactionNotes[0]}
+                        </div>
+                        {!acceptable && quote.refusalReason && (
+                          <div className="text-[11px] font-mono text-rose-400 mt-1">
+                            ⚠ {quote.refusalReason}
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        onClick={() =>
+                          onExecuteSale(
+                            'MASTER',
+                            activeMaster.id,
+                            prod,
+                            pricePct / 100,
+                            warranty,
+                            exclusive,
+                            secretMark
+                          )
+                        }
+                        disabled={!acceptable}
+                        title={quote.refusalReason || `Expected Trust: ${quote.expectedTrustDelta >= 0 ? '+' : ''}${quote.expectedTrustDelta}`}
+                        className="min-h-[40px] px-3.5 py-2 bg-rose-600 hover:bg-rose-500 disabled:bg-slate-800 disabled:text-slate-500 text-white text-xs font-mono font-semibold rounded-lg cursor-pointer whitespace-nowrap shrink-0 tabular-nums"
+                      >
+                        {quote.refusalReason?.startsWith('Loadout full') ? 'Full' : quote.boycotting ? 'Boycott' : !canAfford ? 'No Budget' : `Sell (${askPrice}g)`}
+                      </button>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Right 6 Cols: Adventuring Party Outfitting */}
+        <div className="lg:col-span-6 bg-[#131822] border border-slate-800 rounded-xl p-5 flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between gap-2 pb-3 mb-4 border-b border-slate-800">
+              <div>
+                <span className="text-xs font-mono text-emerald-400 block">
+                  SCHEDULED ADVENTURING PARTY · CHALLENGER
+                </span>
+                <h3 className="font-display text-lg font-bold text-slate-100">{activeParty.name}</h3>
+                <p className="text-xs text-slate-400">
+                  {activeParty.ethics} Ethics · &ldquo;{activeParty.motto}&rdquo;
+                </p>
+              </div>
+              <select
+                aria-label="Scheduled Adventuring Party"
+                value={activeParty.id}
+                onChange={(e) => onSelectScheduledMatchup(activeMaster.id, e.target.value)}
+                className="bg-[#0B0E14] border border-slate-700 rounded px-3 py-2 text-xs text-slate-200 font-mono"
+              >
+                {regionParties.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} ({p.budget}g)
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Party Metrics */}
+            <div className="grid grid-cols-4 gap-2 mb-4 text-xs font-mono tabular-nums">
+              <div className="p-2 bg-[#0B0E14] border border-slate-800 rounded">
+                <span className="text-slate-400 block">Party Gold</span>
+                <span className="text-amber-400 font-semibold">{activeParty.budget}g</span>
+              </div>
+              <div className="p-2 bg-[#0B0E14] border border-slate-800 rounded">
+                <span className="text-slate-400 block">Vanguard Mass</span>
+                <span className="text-sky-400 font-semibold">{activeParty.members[0]?.massKg || 85}kg</span>
+              </div>
+              <div className="p-2 bg-[#0B0E14] border border-slate-800 rounded">
+                <span className="text-slate-400 block">Caution</span>
+                <span className="text-slate-200 font-semibold">{activeParty.caution}/100</span>
+              </div>
+              <div className="p-2 bg-[#0B0E14] border border-slate-800 rounded">
+                <span className="text-slate-400 block">Trust</span>
+                <span className="text-emerald-400 font-semibold">{activeParty.trust}/100</span>
+              </div>
+            </div>
+
+            <div className="p-3 bg-[#0B0E14] border border-slate-800 rounded-lg mb-4 text-xs space-y-1">
+              <div className="font-mono text-emerald-300">Wanted Countermeasure: {activeParty.desiredCounter}</div>
+              <div className="font-mono text-slate-400">
+                Equipped Loadout ({activeParty.equippedProducts.length}/4):{' '}
+                {activeParty.equippedProducts
+                  .map((pid) => products.find((p) => p.id === pid)?.name || pid)
+                  .join(' · ') || 'Standard Guild Issue'}
+              </div>
+              <p className="text-slate-300">{activeParty.memoryLog[activeParty.memoryLog.length - 1]}</p>
+            </div>
+
+            <div className="text-xs font-mono text-slate-400 mb-2">
+              Available Tonics, Antidotes &amp; Counter-Gear in Stock ({heroProducts.length}):
+            </div>
+            <div className="space-y-2.5 max-h-64 overflow-y-auto pr-1">
+              {heroProducts.length === 0 ? (
+                <div className="p-4 bg-[#0B0E14] border border-slate-800 rounded text-xs text-slate-400">
+                  No hero tonics in stock. Brew antidotes or morph draughts in the Alchemy Lab first.
+                </div>
+              ) : (
+                heroProducts.map((prod) => {
+                  const quote = computeQuotation(prod, activeParty, 'HERO', {
+                    priceMultiplier: pricePct / 100,
+                    warrantyBacked: warranty,
+                    exclusiveDeal: exclusive,
+                    secretProvenance: secretMark,
+                    day,
+                    seed,
+                    unlockedSkills
+                  });
+                  const askPrice = quote.unitPrice;
+                  const canAfford = quote.canAfford;
+                  const acceptable = quote.acceptable;
+                  const sigLabel = prod.formulaSignature || prod.id.slice(-6).toUpperCase();
+                  return (
+                    <div
+                      key={prod.id}
+                      className="p-3 bg-[#0B0E14] border border-slate-800 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                    >
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold text-slate-100 break-words">
+                          {prod.name}{' '}
+                          <span className="text-[11px] font-mono text-emerald-400">[#{sigLabel}]</span>
+                        </div>
+                        <div className="text-xs font-mono text-slate-400 tabular-nums">
+                          Stock: {prod.stock} · Potency {prod.potency} · Stab {prod.stability}
+                          {prod.massEffectKg !== 0 ? ` · ${prod.massEffectKg}kg Mass` : ''}
+                          {prod.sulphurVulnerable ? ' · VULNERABLE TO SULPHUR' : ' · SULPHUR SAFE'}
+                        </div>
+                        <div className="text-[11px] text-slate-400 mt-0.5 break-words">
+                          {prod.reactionNotes[0]}
+                        </div>
+                        {!acceptable && quote.refusalReason && (
+                          <div className="text-[11px] font-mono text-rose-400 mt-1">
+                            ⚠ {quote.refusalReason}
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        onClick={() =>
+                          onExecuteSale(
+                            'HERO',
+                            activeParty.id,
+                            prod,
+                            pricePct / 100,
+                            warranty,
+                            exclusive,
+                            secretMark
+                          )
+                        }
+                        disabled={!acceptable}
+                        title={quote.refusalReason || `Expected Trust: ${quote.expectedTrustDelta >= 0 ? '+' : ''}${quote.expectedTrustDelta}`}
+                        className="min-h-[40px] px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 text-xs font-mono font-semibold rounded-lg cursor-pointer whitespace-nowrap shrink-0 tabular-nums"
+                      >
+                        {quote.refusalReason?.startsWith('Loadout full') ? 'Full' : quote.boycotting ? 'Boycott' : !canAfford ? 'No Budget' : `Sell (${askPrice}g)`}
+                      </button>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Bottom Summary of Today's Bilateral Contracts + Launch Expedition CTA */}
+      <div className="bg-[#131822] border border-slate-800 rounded-xl p-4 flex flex-wrap items-center justify-between gap-4">
+        <div className="text-xs font-mono text-slate-300">
+          <span>
+            Contracts Signed Today: <strong className="text-amber-400">{contractsToday.length}</strong>
+          </span>
+          <span className="mx-2">·</span>
+          <span>
+            Today’s Recognised Revenue:{' '}
+            <strong className="text-emerald-400">
+              {contractsToday.reduce((acc, c) => acc + c.totalRevenue, 0).toLocaleString()}g
+            </strong>
+          </span>
+        </div>
+
+        <button
+          onClick={onLaunchExpedition}
+          className="min-h-[44px] px-6 py-2.5 bg-amber-600 hover:bg-amber-500 text-slate-950 font-semibold text-sm rounded-lg transition-colors cursor-pointer whitespace-nowrap shrink-0"
+        >
+          Resolve Dungeon Expedition ({activeParty.name} vs {activeMaster.name})
+        </button>
+      </div>
+    </div>
+  );
+};
+
+interface FinancialsPanelProps {
+  gold: number;
+  debt: number;
+  unlockedRegions: RegionId[];
+  expertUnlocked: boolean;
+  ledger: FinancialRecord[];
+  rivals: RivalHouse[];
+  cheapCreditUnlocked: boolean;
+  onUnlockRegionCharter: (regionId: RegionId, cost: number, useBridgeLoan: boolean) => void;
+  onPayDownDebt: (amount: number) => void;
+}
+
+export const FinancialsPanel: React.FC<FinancialsPanelProps> = ({
+  gold,
+  debt,
+  unlockedRegions,
+  expertUnlocked,
+  ledger,
+  rivals,
+  cheapCreditUnlocked,
+  onUnlockRegionCharter,
+  onPayDownDebt
+}) => {
+  return (
+    <div className="space-y-6">
+      {/* Region Trading Charters & Bridge Financing (Prevents Softlocks) */}
+      <div className="bg-[#131822] border border-slate-800 rounded-xl p-5">
+        <div className="flex flex-wrap items-center justify-between gap-2 pb-3 mb-4 border-b border-slate-800">
+          <div>
+            <h2 className="font-display text-lg font-bold text-slate-100">
+              01. Regional Trading Charters &amp; Bridge Financing
+            </h2>
+            <p className="text-xs text-slate-400">
+              Earlier dungeons remain active in the connected world economy after later charters unlock. Bridge loans charge {cheapCreditUnlocked ? '0.3%' : '0.5%'}/day and auto-amortize out of net profits.
+            </p>
+          </div>
+          {debt > 0 && (
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-mono text-rose-400 tabular-nums">
+                Active Bridge Debt: {debt.toLocaleString()}g
+              </span>
+              <button
+                onClick={() => onPayDownDebt(Math.min(gold, debt))}
+                disabled={gold <= 0}
+                className="min-h-[38px] px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-slate-950 text-xs font-mono font-semibold rounded cursor-pointer whitespace-nowrap shrink-0"
+              >
+                Repay Debt ({Math.min(gold, debt).toLocaleString()}g)
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {REGIONS_DATA.map((reg) => {
+            const isUnlocked = unlockedRegions.includes(reg.id);
+            const canBuyCash = !reg.requiresCatalyst && gold >= reg.charterCostGold;
+            const minDownPayment = Math.round(reg.charterCostGold * (cheapCreditUnlocked ? 0.2 : 0.3));
+            const canBridgeLoan = !reg.requiresCatalyst && gold >= minDownPayment && !isUnlocked;
+
+            return (
+              <div
+                key={reg.id}
+                className={`p-4 rounded-xl border flex flex-col justify-between ${
+                  isUnlocked ? 'bg-[#0B0E14] border-emerald-800/70' : 'bg-[#0B0E14] border-slate-800'
+                }`}
+              >
+                <div>
+                  <div className="flex items-center justify-between text-xs font-mono text-slate-400 mb-1">
+                    <span>
+                      REALM {reg.roman} · {reg.difficulty.toUpperCase()}
+                    </span>
+                    <span className={isUnlocked ? 'text-emerald-400 font-semibold' : 'text-amber-400'}>
+                      {isUnlocked ? 'CHARTER ACTIVE' : reg.requiresCatalyst ? 'CATALYST GATE' : `${reg.charterCostGold.toLocaleString()}g`}
+                    </span>
+                  </div>
+                  <h3 className="font-display text-base font-bold text-slate-100 mb-1.5">{reg.name}</h3>
+                  <p className="text-xs text-slate-400 mb-3 leading-relaxed">{reg.tagline}</p>
+                </div>
+
+                <div className="pt-3 border-t border-slate-800/80 space-y-2">
+                  {isUnlocked ? (
+                    <div className="text-xs font-mono text-emerald-400">
+                      Connected to Daily Market Loop
+                    </div>
+                  ) : reg.requiresCatalyst ? (
+                    <div className="text-xs font-mono text-amber-300">
+                      {expertUnlocked
+                        ? 'Catalyst Verified! Click to Activate.'
+                        : 'Requires Hard Mode (Blackspire) + Attributable Paradox Catalyst.'}
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-1.5">
+                      <button
+                        onClick={() => onUnlockRegionCharter(reg.id, reg.charterCostGold, false)}
+                        disabled={!canBuyCash}
+                        className="min-h-[38px] w-full py-1.5 px-3 bg-amber-600 hover:bg-amber-500 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-mono font-semibold text-xs rounded cursor-pointer whitespace-nowrap"
+                      >
+                        Buy Charter Cash ({reg.charterCostGold.toLocaleString()}g)
+                      </button>
+                      <button
+                        onClick={() => onUnlockRegionCharter(reg.id, reg.charterCostGold, true)}
+                        disabled={!canBridgeLoan}
+                        className="min-h-[38px] w-full py-1.5 px-3 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-amber-300 font-mono text-xs rounded cursor-pointer whitespace-nowrap"
+                      >
+                        Bridge Loan ({minDownPayment.toLocaleString()}g Down)
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Double-Entry Accounting Ledger Table */}
+      <div className="bg-[#131822] border border-slate-800 rounded-xl p-5">
+        <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-800">
+          <h2 className="font-display text-lg font-bold text-slate-100">
+            02. Merchant Profit &amp; Balance Sheet Ledger
+          </h2>
+          <span className="text-xs font-mono text-slate-400">
+            Profit = Recognised Sales − COGS − Overhead − Warranty Claims − Fines − Interest
+          </span>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse text-xs font-mono tabular-nums">
+            <thead>
+              <tr className="border-b border-slate-800 text-slate-400">
+                <th className="py-2.5 px-3">Day</th>
+                <th className="py-2.5 px-3">Revenue</th>
+                <th className="py-2.5 px-3">COGS</th>
+                <th className="py-2.5 px-3">Gross Margin</th>
+                <th className="py-2.5 px-3">Overhead</th>
+                <th className="py-2.5 px-3">Claims / Fines / Int</th>
+                <th className="py-2.5 px-3">Net Profit</th>
+                <th className="py-2.5 px-3">Ending Cash</th>
+                <th className="py-2.5 px-3">Debt</th>
+                <th className="py-2.5 px-3">Net Worth</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800/70">
+              {ledger.map((row) => (
+                <tr key={row.day} className="hover:bg-slate-900/50">
+                  <td className="py-2.5 px-3 text-slate-200 font-semibold">Day {row.day}</td>
+                  <td className="py-2.5 px-3 text-emerald-400">+{row.grossRevenue.toLocaleString()}g</td>
+                  <td className="py-2.5 px-3 text-slate-300">-{row.cogs.toLocaleString()}g</td>
+                  <td className="py-2.5 px-3 text-sky-400">{row.grossMargin.toLocaleString()}g</td>
+                  <td className="py-2.5 px-3 text-slate-400">-{row.overheadAndStorage.toLocaleString()}g</td>
+                  <td className="py-2.5 px-3 text-rose-400">
+                    -{(row.warrantyAndClaims + row.finesAndBribes + row.financingInterest).toLocaleString()}g
+                  </td>
+                  <td className={`py-2.5 px-3 font-semibold ${row.netProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    {row.netProfit >= 0 ? `+${row.netProfit.toLocaleString()}g` : `${row.netProfit.toLocaleString()}g`}
+                  </td>
+                  <td className="py-2.5 px-3 text-amber-300">{row.endingCash.toLocaleString()}g</td>
+                  <td className="py-2.5 px-3 text-rose-300">{row.debt.toLocaleString()}g</td>
+                  <td className="py-2.5 px-3 text-slate-100 font-semibold">{row.netWorth.toLocaleString()}g</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Rival Merchant Houses Activity */}
+      <div className="bg-[#131822] border border-slate-800 rounded-xl p-5">
+        <h3 className="font-display text-base font-bold text-slate-100 mb-3">
+          03. Competing Rival Merchant Houses (4 Active Competitors)
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {rivals.map((riv) => (
+            <div key={riv.id} className="p-3.5 bg-[#0B0E14] border border-slate-800 rounded-lg text-xs">
+              <div className="flex items-center justify-between mb-1">
+                <span className="font-semibold text-slate-100 text-sm">{riv.name}</span>
+                <span className="font-mono text-amber-400 tabular-nums">
+                  Market Share: {riv.marketShare}% · Undercut: {riv.priceUndercutPct}%
+                </span>
+              </div>
+              <div className="text-slate-400 mb-1.5">Specialty: {riv.specialty}</div>
+              <div className="font-mono text-slate-300 bg-slate-900/90 p-2 rounded border border-slate-800">
+                Latest Move: {riv.lastAction}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+==== END FILE src/components/TradeAndLedgerPanels.tsx ====
+
+==== BEGIN FILE src/components/WorldAndIntelPanels.tsx BLOB 15ee635c04634c929b412b01e61041ad29ec6cb8 ====
+import React, { useState } from 'react';
+import {
+  MarketFactOrRumour,
+  DungeonMaster,
+  AdventuringParty,
+  SkillNode,
+  ParadoxCatalystEntry,
+  ExpeditionReport,
+  RegionId
+} from '../types/game';
+import { generatePeerCatalystCode } from '../engine/simulation';
+import { Sim001AuditPanel } from './Sim001AuditPanel';
+
+interface IntelPanelProps {
+  day: number;
+  gold: number;
+  intelFeed: MarketFactOrRumour[];
+  basiliskChainStage: number;
+  blackspireUnlocked: boolean;
+  blackspireResolution: 'NONE' | 'HONEST_BROKER' | 'CARTEL_SYNDICATE' | 'PARTISAN_ARMOURER' | 'CALCULATED_CHAOS';
+  onResolveBasiliskDecision: (choice: 'REFORMULATE' | 'REFUND_GUILD' | 'BRIBE_GRIMTHORN' | 'BLAME_RIVAL') => void;
+  onChooseBlackspireEnding: (ending: 'HONEST_BROKER' | 'CARTEL_SYNDICATE' | 'PARTISAN_ARMOURER' | 'CALCULATED_CHAOS') => void;
+}
+
+export const IntelAndStoryPanel: React.FC<IntelPanelProps> = ({
+  day,
+  gold,
+  intelFeed,
+  basiliskChainStage,
+  blackspireUnlocked,
+  blackspireResolution,
+  onResolveBasiliskDecision,
+  onChooseBlackspireEnding
+}) => {
+  const [filterType, setFilterType] = useState<'ALL' | 'FACTS' | 'RUMOURS'>('ALL');
+
+  const filteredIntel = intelFeed.filter((item) => {
+    if (filterType === 'FACTS') return item.isVerifiedFact;
+    if (filterType === 'RUMOURS') return !item.isVerifiedFact;
+    return true;
+  });
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      {/* Left 7 Cols: Timestamped Market Facts vs In-World Rumours */}
+      <div className="lg:col-span-7 bg-[#131822] border border-slate-800 rounded-xl p-5">
+        <div className="flex flex-wrap items-center justify-between gap-2 pb-4 mb-4 border-b border-slate-800">
+          <div>
+            <h2 className="font-display text-lg font-bold text-slate-100">
+              01. Morning Intelligence &amp; Rumour Desk
+            </h2>
+            <p className="text-xs text-slate-400">
+              Verified facts are audited from freight manifests; tavern rumours carry explicit confidence scores.
+            </p>
+          </div>
+          <div className="flex gap-1 bg-[#0B0E14] p-1 rounded-lg border border-slate-800">
+            {(['ALL', 'FACTS', 'RUMOURS'] as const).map((f) => (
+              <button
+                key={f}
+                onClick={() => setFilterType(f)}
+                className={`px-2.5 py-1 text-xs font-mono rounded cursor-pointer whitespace-nowrap shrink-0 ${
+                  filterType === f ? 'bg-amber-600 text-slate-950 font-semibold' : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                {f}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-3 max-h-[520px] overflow-y-auto pr-1">
+          {filteredIntel.map((item) => (
+            <div
+              key={item.id}
+              className="p-4 bg-[#0B0E14] border border-slate-800 rounded-lg space-y-1.5"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-mono text-slate-400">
+                <span>
+                  DAY {item.day} · {item.timestamp} · {item.region.toUpperCase()}
+                </span>
+                <span className={item.isVerifiedFact ? 'text-emerald-400 font-semibold' : 'text-amber-400'}>
+                  {item.isVerifiedFact
+                    ? 'VERIFIED FACT (100%)'
+                    : `UNCONFIRMED RUMOUR (${item.reliabilityPct}% CONFIDENCE)`}
+                </span>
+              </div>
+              <h3 className="text-sm font-semibold text-slate-100">{item.headline}</h3>
+              <p className="text-xs text-slate-300 leading-relaxed">{item.detail}</p>
+              <div className="text-[11px] font-mono text-slate-500 pt-1">
+                Source Provenance: {item.source}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Right 5 Cols: Emergent Story Chains (Basilisk Supply Chain & Blackspire Resolution) */}
+      <div className="lg:col-span-5 flex flex-col gap-6">
+        <div className="bg-[#131822] border border-slate-800 rounded-xl p-5">
+          <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-800">
+            <h3 className="font-display text-base font-bold text-slate-100">
+              02. Emergent Case: The Basilisk Supply Chain
+            </h3>
+            <span className="text-xs font-mono text-amber-400">
+              Stage {basiliskChainStage} / 3
+            </span>
+          </div>
+
+          <p className="text-xs text-slate-300 leading-relaxed mb-4">
+            Overseer Grimthorn pairs a Cave-Basilisk with a Sulphur-Fog Machine. Standard unstabilised Basilisk Antidotes sold to the Silver Stag Company lose 55% potency in sulphur vapour, triggering partial petrification and a Guild Investigation. How do you play the fallout?
+          </p>
+
+          <div className="space-y-2">
+            <button
+              onClick={() => onResolveBasiliskDecision('REFORMULATE')}
+              className="w-full text-left p-3 bg-[#0B0E14] hover:bg-slate-900 border border-slate-800 rounded-lg text-xs transition-colors cursor-pointer"
+            >
+              <div className="font-semibold text-emerald-400 mb-0.5">
+                A. Reformulate with Calcified Quartz Salt (+2 Chelated Antidotes)
+              </div>
+              <div className="text-slate-400">
+                Synthesize Sulphur-Immune Quartz-Chelated Antidotes for Silver Stag (+15 Hero Trust, creates DM demand for 8kg Acid Traps).
+              </div>
+            </button>
+
+            <button
+              onClick={() => onResolveBasiliskDecision('REFUND_GUILD')}
+              disabled={gold < 180}
+              className="w-full text-left p-3 bg-[#0B0E14] hover:bg-slate-900 disabled:opacity-40 border border-slate-800 rounded-lg text-xs transition-colors cursor-pointer"
+            >
+              <div className="font-semibold text-sky-400 mb-0.5">
+                B. Indemnify &amp; Refund Silver Stag Guild (-180g)
+              </div>
+              <div className="text-slate-400">
+                Quashes the Guild Investigation and restores +20 Hero Trust across the Warrens.
+              </div>
+            </button>
+
+            <button
+              onClick={() => onResolveBasiliskDecision('BRIBE_GRIMTHORN')}
+              disabled={gold < 150}
+              className="w-full text-left p-3 bg-[#0B0E14] hover:bg-slate-900 disabled:opacity-40 border border-slate-800 rounded-lg text-xs transition-colors cursor-pointer"
+            >
+              <div className="font-semibold text-amber-400 mb-0.5">
+                C. Subsidy Pact with Overseer Grimthorn (-150g)
+              </div>
+              <div className="text-slate-400">
+                Grimthorn throttles his Sulphur vents to keep raids profitable (+20 DM Trust, +320g contract order).
+              </div>
+            </button>
+
+            <button
+              onClick={() => onResolveBasiliskDecision('BLAME_RIVAL')}
+              className="w-full text-left p-3 bg-[#0B0E14] hover:bg-slate-900 border border-slate-800 rounded-lg text-xs transition-colors cursor-pointer"
+            >
+              <div className="font-semibold text-rose-400 mb-0.5">
+                D. Frame Rival House Vane &amp; Sons for Diluted Bile
+              </div>
+              <div className="text-slate-400">
+                Shifts blame onto Vane &amp; Sons (-6% Rival Market Share) and boosts demand for your Charcoal Breathers.
+              </div>
+            </button>
+          </div>
+        </div>
+
+        {/* Central Campaign Political Resolution (Blackspire Hard Mode) */}
+        <div className="bg-[#131822] border border-slate-800 rounded-xl p-5">
+          <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-800">
+            <h3 className="font-display text-base font-bold text-slate-100">
+              03. Blackspire Central Campaign Resolution
+            </h3>
+            <span className="text-xs font-mono text-slate-400">
+              {blackspireResolution === 'NONE' ? 'Active Story Horizon' : `Resolved: ${blackspireResolution}`}
+            </span>
+          </div>
+
+          <p className="text-xs text-slate-400 leading-relaxed mb-3">
+            The core narrative resolves in Blackspire Labyrinth (Hard) without requiring Expert. Choose your merchant house’s permanent political doctrine:
+          </p>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {[
+              {
+                id: 'HONEST_BROKER' as const,
+                title: 'Ethical Bilateral Broker',
+                desc: 'Transparent warranties & non-lethal deterrence (+Trust with both sides).'
+              },
+              {
+                id: 'CARTEL_SYNDICATE' as const,
+                title: 'Unchallenged Monopoly',
+                desc: 'Corner reagent supply & fix prices across all four regions (+Margin).'
+              },
+              {
+                id: 'PARTISAN_ARMOURER' as const,
+                title: 'Crown Defence Contractor',
+                desc: 'Indemnified state supplier to Dungeon Masters or Guilds.'
+              },
+              {
+                id: 'CALCULATED_CHAOS' as const,
+                title: 'Catastrophe Profiteer',
+                desc: 'Engineer perpetual arms-race escalation between masters & raiders.'
+              }
+            ].map((opt) => (
+              <button
+                key={opt.id}
+                onClick={() => onChooseBlackspireEnding(opt.id)}
+                className={`p-3 rounded-lg border text-left text-xs transition-colors cursor-pointer ${
+                  blackspireResolution === opt.id
+                    ? 'bg-amber-950/40 border-amber-500 text-amber-200'
+                    : 'bg-[#0B0E14] border-slate-800 hover:border-slate-700 text-slate-200'
+                }`}
+              >
+                <div className="font-semibold mb-1">{opt.title}</div>
+                <div className="text-slate-400 text-[11px]">{opt.desc}</div>
+              </button>
+            ))}
+          </div>
+          {!blackspireUnlocked && (
+            <p className="text-[11px] font-mono text-amber-400/90 mt-3">
+              Note: You can pre-select your house doctrine now; full Crown ratification triggers upon unlocking Blackspire Labyrinth.
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+interface ClientDirectoryProps {
+  masters: DungeonMaster[];
+  parties: AdventuringParty[];
+}
+
+export const ClientDirectoryPanel: React.FC<ClientDirectoryProps> = ({ masters, parties }) => {
+  const [regionFilter, setRegionFilter] = useState<RegionId | 'ALL'>('ALL');
+
+  const filteredMasters = masters.filter((m) => regionFilter === 'ALL' || m.region === regionFilter);
+  const filteredParties = parties.filter((p) => regionFilter === 'ALL' || p.region === regionFilter);
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-[#131822] border border-slate-800 rounded-xl p-4 flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h2 className="font-display text-lg font-bold text-slate-100">
+            Client Memory &amp; Dossier Registry (12 Masters · 16 Parties)
+          </h2>
+          <p className="text-xs text-slate-400">
+            No forced 50/50 reputation bar. Faction loyalty, specialist arms dealing, or bilateral balance are all viable.
+          </p>
+        </div>
+        <div className="flex gap-1 bg-[#0B0E14] p-1 rounded-lg border border-slate-800">
+          {(['ALL', 'cellar', 'warrens', 'blackspire', 'vault'] as const).map((r) => (
+            <button
+              key={r}
+              onClick={() => setRegionFilter(r)}
+              className={`px-3 py-1 text-xs font-mono rounded cursor-pointer whitespace-nowrap shrink-0 ${
+                regionFilter === r ? 'bg-amber-600 text-slate-950 font-semibold' : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              {r.toUpperCase()}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* 12 Named Dungeon Masters */}
+        <div className="bg-[#131822] border border-slate-800 rounded-xl p-5">
+          <h3 className="font-display text-base font-bold text-rose-400 mb-3">
+            Dungeon Masters ({filteredMasters.length})
+          </h3>
+          <div className="space-y-3 max-h-[540px] overflow-y-auto pr-1">
+            {filteredMasters.map((m) => (
+              <div key={m.id} className="p-3.5 bg-[#0B0E14] border border-slate-800 rounded-lg text-xs space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-slate-100 text-sm">{m.name}</span>
+                  <span className="font-mono text-amber-400 tabular-nums">
+                    {m.region.toUpperCase()} · Budget {m.budget}g · Trust {m.trust}
+                  </span>
+                </div>
+                <div className="text-slate-400">{m.title} — {m.personality}</div><p className="text-xs text-amber-300">Temporal resets remaining: {(m.installedResetCharges ?? []).reduce((sum,n)=>sum+n,0)}</p>
+                <div className="font-mono text-slate-300 tabular-nums">
+                  Deterrence {m.deterrenceScore} · Prestige {m.prestigeScore} · Visitor Traffic {m.visitorTraffic}%
+                </div>
+                <div className="text-emerald-400 font-mono">Wants: {m.desiredTrait}</div>
+                <div className="text-slate-400 italic">
+                  Latest Memory: "{m.memoryLog[m.memoryLog.length - 1]}"
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* 16 Named Adventuring Parties */}
+        <div className="bg-[#131822] border border-slate-800 rounded-xl p-5">
+          <h3 className="font-display text-base font-bold text-emerald-400 mb-3">
+            Adventuring Parties ({filteredParties.length})
+          </h3>
+          <div className="space-y-3 max-h-[540px] overflow-y-auto pr-1">
+            {filteredParties.map((p) => (
+              <div key={p.id} className="p-3.5 bg-[#0B0E14] border border-slate-800 rounded-lg text-xs space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-slate-100 text-sm">{p.name}</span>
+                  <span className="font-mono text-amber-400 tabular-nums">
+                    {p.region.toUpperCase()} · Gold {p.budget}g · Trust {p.trust}
+                  </span>
+                </div>
+                <div className="text-slate-400">
+                  Ethics: {p.ethics} · Caution: {p.caution}/100 · "{p.motto}"
+                </div>
+                <div className="font-mono text-sky-300 tabular-nums">
+                  Roster: {p.members.map((mem) => `${mem.name} (${mem.role}, ${mem.massKg}kg)`).join(' · ')}
+                </div>
+                <div className="text-amber-300 font-mono">Seeking: {p.desiredCounter}</div>
+                <div className="text-slate-400 italic">
+                  Latest Memory: "{p.memoryLog[p.memoryLog.length - 1]}"
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+interface SpecialisationsProps {
+  skillPoints: number;
+  skills: SkillNode[];
+  onUnlockSkill: (skillId: string) => void;
+}
+
+export const SpecialisationsPanel: React.FC<SpecialisationsProps> = ({
+  skillPoints,
+  skills,
+  onUnlockSkill
+}) => {
+  const branches: Array<'Alchemy' | 'Engineering' | 'Commerce' | 'Intelligence'> = [
+    'Alchemy',
+    'Engineering',
+    'Commerce',
+    'Intelligence'
+  ];
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-[#131822] border border-slate-800 rounded-xl p-4 flex items-center justify-between">
+        <div>
+          <h2 className="font-display text-lg font-bold text-slate-100">
+            Merchant Specialisation Trees (Combinable Freely)
+          </h2>
+          <p className="text-xs text-slate-400">
+            No classes are sealed. Earn +1 Skill Point per resolved expedition or milestone.
+          </p>
+        </div>
+        <div className="text-sm font-mono font-semibold text-amber-400 tabular-nums">
+          Available Skill Points: {skillPoints} SP
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+        {branches.map((branch) => (
+          <div key={branch} className="bg-[#131822] border border-slate-800 rounded-xl p-4 space-y-3">
+            <h3 className="font-display text-base font-bold text-slate-100 pb-2 border-b border-slate-800">
+              {branch} Branch
+            </h3>
+            {skills
+              .filter((s) => s.branch === branch)
+              .map((sk) => (
+                <div
+                  key={sk.id}
+                  className={`p-3 rounded-lg border text-xs flex flex-col justify-between gap-2 ${
+                    sk.unlocked
+                      ? 'bg-emerald-950/25 border-emerald-700/70'
+                      : 'bg-[#0B0E14] border-slate-800'
+                  }`}
+                >
+                  <div>
+                    <div className="flex items-center justify-between font-mono text-[11px] text-slate-400 mb-1">
+                      <span>TIER {sk.tier}</span>
+                      <span>{sk.unlocked ? 'ACTIVE' : `${sk.costPoints} SP`}</span>
+                    </div>
+                    <div className="font-semibold text-slate-100 mb-1">{sk.name}</div>
+                    <p className="text-slate-400 leading-relaxed">{sk.description}</p>
+                  </div>
+                  {!sk.unlocked && (
+                    <button
+                      onClick={() => onUnlockSkill(sk.id)}
+                      disabled={skillPoints < sk.costPoints}
+                      className="w-full py-1.5 bg-amber-600 hover:bg-amber-500 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-mono font-semibold rounded cursor-pointer"
+                    >
+                      Unlock ({sk.costPoints} SP)
+                    </button>
+                  )}
+                </div>
+              ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+interface ArchivesAndCatalystProps {
+  day: number;
+  seed: number;
+  blackspireUnlocked: boolean;
+  expertUnlocked: boolean;
+  catalystLedger: ParadoxCatalystEntry[];
+  expeditionReports: ExpeditionReport[];
+  customBrewsCount: number;
+  customTrapsCount: number;
+  masterSalesCount: number;
+  heroSalesCount: number;
+  onClaimSoloDmCatalyst: () => void;
+  onImportPeerCatalyst: (code: string) => { valid: boolean; message: string };
+  onExportSaveJson: () => string;
+  onImportSaveJson: (jsonStr: string) => boolean;
+}
+
+export const ArchivesAndCatalystPanel: React.FC<ArchivesAndCatalystProps> = ({
+  day,
+  seed,
+  blackspireUnlocked,
+  expertUnlocked,
+  catalystLedger,
+  expeditionReports,
+  customBrewsCount,
+  customTrapsCount,
+  masterSalesCount,
+  heroSalesCount,
+  onClaimSoloDmCatalyst,
+  onImportPeerCatalyst,
+  onExportSaveJson,
+  onImportSaveJson
+}) => {
+  const [subView, setSubView] = useState<'SIM_001' | 'CATALYST_SAVES'>('SIM_001');
+  const [peerInputCode, setPeerInputCode] = useState('');
+  const [peerFeedback, setPeerFeedback] = useState<string | null>(null);
+  const [saveJsonText, setSaveJsonText] = useState('');
+  const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
+
+  const outboundShareCode = generatePeerCatalystCode('HOUSE_MERCHANT', day);
+  const sampleValidPeerCode = generatePeerCatalystCode('VESPERA_ENVOY', day + 1);
+
+  const bilateralVerified = masterSalesCount >= 2 && heroSalesCount >= 2;
+  const soloCommissionReady =
+    blackspireUnlocked &&
+    customBrewsCount >= 2 &&
+    customTrapsCount >= 2 &&
+    bilateralVerified;
+
+  const handlePeerSubmit = () => {
+    const res = onImportPeerCatalyst(peerInputCode);
+    setPeerFeedback(res.message);
+    if (res.valid) setPeerInputCode('');
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-[#131822] border border-slate-800 rounded-xl p-3 flex flex-wrap items-center justify-between gap-3">
+        <div className="text-xs font-mono text-slate-300">
+          ARCHIVES &amp; INDEPENDENT AUDIT WORKSPACE (SIM-001 BASELINE &amp; SIM-002 REPAIR)
+        </div>
+        <div className="flex gap-1 bg-[#0B0E14] p-1 rounded-lg border border-slate-800">
+          <button
+            onClick={() => setSubView('SIM_001')}
+            className={`min-h-[38px] px-3 py-1.5 text-xs font-mono rounded cursor-pointer whitespace-nowrap shrink-0 ${
+              subView === 'SIM_001'
+                ? 'bg-amber-600 text-slate-950 font-semibold'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            SIM-001 &amp; SIM-002 Empirical Audit (5,000 Campaigns)
+          </button>
+          <button
+            onClick={() => setSubView('CATALYST_SAVES')}
+            className={`min-h-[38px] px-3 py-1.5 text-xs font-mono rounded cursor-pointer whitespace-nowrap shrink-0 ${
+              subView === 'CATALYST_SAVES'
+                ? 'bg-amber-600 text-slate-950 font-semibold'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            Paradox Catalyst Gate &amp; Save Ledger
+          </button>
+        </div>
+      </div>
+
+      {subView === 'SIM_001' ? (
+        <Sim001AuditPanel />
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      {/* Left 7 Cols: Paradox Catalyst Gate & Provenance Gift Ledger */}
+      <div className="lg:col-span-7 space-y-6">
+        <div className="bg-[#131822] border border-slate-800 rounded-xl p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2 pb-3 mb-4 border-b border-slate-800">
+            <div>
+              <h2 className="font-display text-lg font-bold text-slate-100">
+                01. The Paradox Catalyst Gate (Hard → Expert)
+              </h2>
+              <p className="text-xs text-slate-400">
+                Hard Rule: Requires prior Blackspire Labyrinth (Hard) access + an attributable Catalyst via Vespera’s Commission or Cryptographic Peer Exchange.
+              </p>
+            </div>
+            <span className={`text-xs font-mono font-semibold ${expertUnlocked ? 'text-emerald-400' : 'text-amber-400'}`}>
+              {expertUnlocked ? 'THE PARADOX VAULT UNLOCKED' : 'AWAITING HARD CHARTER & CATALYST'}
+            </span>
+          </div>
+
+          {/* Route A: Solo Self-Found Offline DM Commission */}
+          <div className="p-4 bg-[#0B0E14] border border-slate-800 rounded-lg mb-4">
+            <div className="text-xs font-mono text-amber-400 mb-1">
+              ROUTE A · SOLO OFFLINE DUNGEON MASTER COMMISSION (Arch-Architect Vespera)
+            </div>
+            <p className="text-xs text-slate-300 mb-3">
+              Satisfy Vespera’s four-part Hard-mode engineering, alchemy, and bilateral supply audit to receive a couriered Paradox Catalyst:
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs font-mono tabular-nums mb-3">
+              <div className={`p-2 rounded border ${blackspireUnlocked ? 'border-emerald-700 text-emerald-400' : 'border-slate-800 text-slate-400'}`}>
+                1. Hard Mode (Blackspire): {blackspireUnlocked ? 'UNLOCKED' : 'LOCKED'}
+              </div>
+              <div className={`p-2 rounded border ${customBrewsCount >= 2 ? 'border-emerald-700 text-emerald-400' : 'border-slate-800 text-slate-400'}`}>
+                2. Custom Alchemy Brews: {customBrewsCount}/2
+              </div>
+              <div className={`p-2 rounded border ${customTrapsCount >= 2 ? 'border-emerald-700 text-emerald-400' : 'border-slate-800 text-slate-400'}`}>
+                3. Custom Trap Assemblies: {customTrapsCount}/2
+              </div>
+              <div className={`p-2 rounded border ${bilateralVerified ? 'border-emerald-700 text-emerald-400' : 'border-slate-800 text-slate-400'}`}>
+                4. Bilateral Contracts: {masterSalesCount}/2 DM · {heroSalesCount}/2 Hero
+              </div>
+            </div>
+            <button
+              onClick={onClaimSoloDmCatalyst}
+              disabled={!soloCommissionReady || expertUnlocked}
+              className="min-h-[42px] px-4 py-2 bg-amber-600 hover:bg-amber-500 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-mono font-semibold text-xs rounded-lg cursor-pointer"
+            >
+              {expertUnlocked
+                ? 'Catalyst Recorded in Gift Ledger'
+                : soloCommissionReady
+                ? 'Receive Couriered Paradox Catalyst from Arch-Architect Vespera'
+                : 'Complete All 4 Hard-Mode Commission Requirements Above'}
+            </button>
+          </div>
+
+          {/* Route B: Community Merchant Dispatch Code Exchange */}
+          <div className="p-4 bg-[#0B0E14] border border-slate-800 rounded-lg">
+            <div className="text-xs font-mono text-sky-400 mb-1">
+              ROUTE B · COMMUNITY MERCHANT DISPATCH CODE (Format Checksum &amp; Replay Protection)
+            </div>
+            <p className="text-xs text-slate-400 mb-3">
+              Once Blackspire Labyrinth (Hard) is unlocked, enter a community peer dispatch code. Codes are verified for format syntax and local replay prevention. Note: this is a casual community trade code; authentic offline progression is earned via Vespera’s Solo Commission above.
+            </p>
+            <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 bg-slate-900 border border-slate-800 rounded text-xs font-mono mb-3">
+              <span className="text-slate-300">Your Outbound Community Dispatch Code:</span>
+              <span className="text-emerald-400 font-semibold select-all">{outboundShareCode}</span>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-2 mb-2">
+              <input
+                type="text"
+                value={peerInputCode}
+                onChange={(e) => setPeerInputCode(e.target.value)}
+                placeholder="Enter Community Dispatch Code (CATALYST-...)"
+                className="flex-1 bg-slate-900 border border-slate-700 rounded px-3 py-2 text-xs font-mono text-slate-100"
+              />
+              <button
+                onClick={handlePeerSubmit}
+                className="min-h-[40px] px-4 py-2 bg-sky-600 hover:bg-sky-500 text-slate-950 font-mono font-semibold text-xs rounded cursor-pointer whitespace-nowrap shrink-0"
+              >
+                Verify &amp; Record Catalyst
+              </button>
+            </div>
+            {peerFeedback && (
+              <div className="text-xs font-mono text-amber-300 mt-1">{peerFeedback}</div>
+            )}
+          </div>
+        </div>
+
+        {/* Gift Ledger History */}
+        <div className="bg-[#131822] border border-slate-800 rounded-xl p-5">
+          <h3 className="font-display text-base font-bold text-slate-100 mb-3">
+            02. Attributable Paradox Catalyst Gift Ledger ({catalystLedger.length})
+          </h3>
+          {catalystLedger.length === 0 ? (
+            <div className="text-xs text-slate-400 font-mono p-3 bg-[#0B0E14] border border-slate-800 rounded">
+              No Paradox Catalysts recorded yet. Complete Vespera’s Solo Commission or verify a Peer Code above.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {catalystLedger.map((entry) => (
+                <div key={entry.id} className="p-3 bg-[#0B0E14] border border-emerald-800/70 rounded text-xs font-mono">
+                  <div className="flex items-center justify-between text-emerald-400 font-semibold">
+                    <span>Sender: {entry.senderName} ({entry.senderType})</span>
+                    <span>Hash: #{entry.provenanceHash} · Day {entry.dayReceived}</span>
+                  </div>
+                  <div className="text-slate-300 mt-1">{entry.commissionNote}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Right 5 Cols: Seeded Deterministic Replay Log & Atomic Save Backup Export/Import */}
+      <div className="lg:col-span-5 space-y-6">
+        <div className="bg-[#131822] border border-slate-800 rounded-xl p-5">
+          <h3 className="font-display text-base font-bold text-slate-100 mb-2">
+            03. Atomic Save Export &amp; Restore
+          </h3>
+          <p className="text-xs text-slate-400 mb-3">
+            Game state auto-saves atomically after every action and on app visibility change. Export or restore a full JSON snapshot anytime.
+          </p>
+          <div className="flex gap-2 mb-3">
+            <button
+              onClick={() => {
+                const dumped = onExportSaveJson();
+                setSaveJsonText(dumped);
+                setSaveFeedback('Snapshot exported to text box below.');
+              }}
+              className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-mono rounded cursor-pointer"
+            >
+              Export Save JSON
+            </button>
+            <button
+              onClick={() => {
+                const ok = onImportSaveJson(saveJsonText);
+                setSaveFeedback(ok ? 'Save snapshot restored successfully!' : 'Invalid JSON snapshot.');
+              }}
+              disabled={!saveJsonText.trim()}
+              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-slate-950 font-semibold text-xs font-mono rounded cursor-pointer"
+            >
+              Import Save JSON
+            </button>
+          </div>
+          <textarea
+            value={saveJsonText}
+            onChange={(e) => setSaveJsonText(e.target.value)}
+            rows={4}
+            placeholder="Click 'Export Save JSON' or paste a saved campaign JSON string here..."
+            className="w-full bg-[#0B0E14] border border-slate-800 rounded p-2.5 text-xs font-mono text-slate-300"
+          />
+          {saveFeedback && <div className="text-xs font-mono text-emerald-400 mt-1.5">{saveFeedback}</div>}
+        </div>
+
+        {/* Deterministic Seeded Expedition Replay Archive */}
+        <div className="bg-[#131822] border border-slate-800 rounded-xl p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-display text-base font-bold text-slate-100">
+              04. Deterministic Replay Archive
+            </h3>
+            <span className="text-xs font-mono text-slate-400 tabular-nums">
+              Campaign Seed: #{seed}
+            </span>
+          </div>
+          <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
+            {expeditionReports.length === 0 ? (
+              <div className="text-xs text-slate-400 font-mono p-3 bg-[#0B0E14] border border-slate-800 rounded">
+                No expeditions resolved yet. Complete a trade day to record seeded causal replays.
+              </div>
+            ) : (
+              expeditionReports.map((rep) => (
+                <div key={rep.id} className="p-3 bg-[#0B0E14] border border-slate-800 rounded text-xs">
+                  <div className="flex items-center justify-between font-mono text-slate-400 mb-1">
+                    <span>Day {rep.day} · {rep.region.toUpperCase()}</span>
+                    <span>Seed #{rep.seed} · {rep.rulesVersion}</span>
+                  </div>
+                  <div className="font-semibold text-slate-100 mb-1">{rep.summaryHeadline}</div>
+                  <div className="text-slate-400 font-mono">
+                    Loot: {rep.totalLooted}g · Master Δ: {rep.masterTreasuryDelta >= 0 ? `+${rep.masterTreasuryDelta}g` : `${rep.masterTreasuryDelta}g`}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+      </div>
+      )}
+    </div>
+  );
+};
+
+==== END FILE src/components/WorldAndIntelPanels.tsx ====
