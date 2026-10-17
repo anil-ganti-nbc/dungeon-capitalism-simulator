@@ -178,12 +178,16 @@ export function executeCommercialTransaction(
     rulesVersion?: string;
   }
 ): TransactionResult {
+  if (!terms || !Number.isFinite(terms.priceMultiplier ?? 1) || (terms.priceMultiplier ?? 1) <= 0
+      || !(['warrantyBacked','exclusiveDeal','secretProvenance'] as const).every(k => typeof terms[k] === 'boolean')) {
+    return { success:false, reason:'Invalid commercial terms.' };
+  }
   // 1. Strict validation: check current authoritative product stock (Gate 3)
   if (!product || !product.id || !Array.isArray(prevState.products)) {
     return { success: false, reason: 'Invalid or missing product reference.' };
   }
   const currentProduct = prevState.products.find((p) => p && p.id === product.id);
-  if (!currentProduct || currentProduct.stock <= 0) {
+  if (!currentProduct || !Number.isSafeInteger(currentProduct.stock) || currentProduct.stock <= 0) {
     return { success: false, reason: 'Product is out of stock or reference is stale.' };
   }
 
