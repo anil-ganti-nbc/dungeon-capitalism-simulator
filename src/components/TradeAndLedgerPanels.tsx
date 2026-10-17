@@ -296,8 +296,7 @@ export const TradeFloorPanel: React.FC<TradeFloorProps> = ({
                   });
                   const askPrice = quote.unitPrice;
                   const canAfford = quote.canAfford;
-                  const full = activeMaster.installedHazards.length >= 3;
-                  const acceptable = quote.acceptable && !full;
+                  const acceptable = quote.acceptable;
                   const sigLabel = prod.formulaSignature || prod.id.slice(-6).toUpperCase();
                   return (
                     <div
@@ -316,9 +315,9 @@ export const TradeFloorPanel: React.FC<TradeFloorProps> = ({
                         <div className="text-[11px] text-slate-400 mt-0.5 break-words">
                           {prod.reactionNotes[0]}
                         </div>
-                        {!acceptable && (quote.refusalReason || full) && (
+                        {!acceptable && quote.refusalReason && (
                           <div className="text-[11px] font-mono text-rose-400 mt-1">
-                            ⚠ {full ? 'Loadout full: use supplies before purchasing another unit.' : quote.refusalReason}
+                            ⚠ {quote.refusalReason}
                           </div>
                         )}
                       </div>
@@ -335,10 +334,10 @@ export const TradeFloorPanel: React.FC<TradeFloorProps> = ({
                           )
                         }
                         disabled={!acceptable}
-                        title={(full ? 'Loadout full' : quote.refusalReason) || `Expected Trust: ${quote.expectedTrustDelta >= 0 ? '+' : ''}${quote.expectedTrustDelta}`}
+                        title={quote.refusalReason || `Expected Trust: ${quote.expectedTrustDelta >= 0 ? '+' : ''}${quote.expectedTrustDelta}`}
                         className="min-h-[40px] px-3.5 py-2 bg-rose-600 hover:bg-rose-500 disabled:bg-slate-800 disabled:text-slate-500 text-white text-xs font-mono font-semibold rounded-lg cursor-pointer whitespace-nowrap shrink-0 tabular-nums"
                       >
-                        {quote.boycotting ? 'Boycott' : !canAfford ? 'No Budget' : `Sell (${askPrice}g)`}
+                        {quote.refusalReason?.startsWith('Loadout full') ? 'Full' : quote.boycotting ? 'Boycott' : !canAfford ? 'No Budget' : `Sell (${askPrice}g)`}
                       </button>
                     </div>
                   );
@@ -427,8 +426,7 @@ export const TradeFloorPanel: React.FC<TradeFloorProps> = ({
                   });
                   const askPrice = quote.unitPrice;
                   const canAfford = quote.canAfford;
-                  const full = activeParty.equippedProducts.length >= 4;
-                  const acceptable = quote.acceptable && !full;
+                  const acceptable = quote.acceptable;
                   const sigLabel = prod.formulaSignature || prod.id.slice(-6).toUpperCase();
                   return (
                     <div
@@ -448,9 +446,9 @@ export const TradeFloorPanel: React.FC<TradeFloorProps> = ({
                         <div className="text-[11px] text-slate-400 mt-0.5 break-words">
                           {prod.reactionNotes[0]}
                         </div>
-                        {!acceptable && (quote.refusalReason || full) && (
+                        {!acceptable && quote.refusalReason && (
                           <div className="text-[11px] font-mono text-rose-400 mt-1">
-                            ⚠ {full ? 'Loadout full: use supplies before purchasing another unit.' : quote.refusalReason}
+                            ⚠ {quote.refusalReason}
                           </div>
                         )}
                       </div>
@@ -467,10 +465,10 @@ export const TradeFloorPanel: React.FC<TradeFloorProps> = ({
                           )
                         }
                         disabled={!acceptable}
-                        title={(full ? 'Loadout full' : quote.refusalReason) || `Expected Trust: ${quote.expectedTrustDelta >= 0 ? '+' : ''}${quote.expectedTrustDelta}`}
+                        title={quote.refusalReason || `Expected Trust: ${quote.expectedTrustDelta >= 0 ? '+' : ''}${quote.expectedTrustDelta}`}
                         className="min-h-[40px] px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 text-xs font-mono font-semibold rounded-lg cursor-pointer whitespace-nowrap shrink-0 tabular-nums"
                       >
-                        {quote.boycotting ? 'Boycott' : !canAfford ? 'No Budget' : `Sell (${askPrice}g)`}
+                        {quote.refusalReason?.startsWith('Loadout full') ? 'Full' : quote.boycotting ? 'Boycott' : !canAfford ? 'No Budget' : `Sell (${askPrice}g)`}
                       </button>
                     </div>
                   );

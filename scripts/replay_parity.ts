@@ -45,7 +45,7 @@ try {
           if(process.argv.includes('--negative')) fs.writeFileSync(path.join(out,'negative-quote.json'),JSON.stringify({actualExpected:quote.unitPrice,mutatedExpected:quote.unitPrice+1,button:await button.innerText()}));
           assert.match(await button.innerText(),new RegExp(`\\(${quote.unitPrice+(process.argv.includes('--negative')?1:0)}g\\)`));
           await button.click(); state=tx.nextState!;
-        } else { assert(!quote.acceptable);assert(quote.refusalReason); }
+        } else { assert(!quote.acceptable);assert(quote.refusalReason);assert.equal(tx.reason,quote.refusalReason);assert(quoteCard.includes(quote.refusalReason)); }
         await page.waitForTimeout(20);
         const actual=await page.evaluate(()=>JSON.parse(localStorage.getItem('trap_and_tonic_save_v2')!));
         let diff:string|null=null;try{assert.deepEqual(actual,state);}catch(e){diff=String(e);}
