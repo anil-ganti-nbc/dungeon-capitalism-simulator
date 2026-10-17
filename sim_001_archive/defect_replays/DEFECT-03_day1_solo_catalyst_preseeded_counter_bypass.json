@@ -1,0 +1,12 @@
+{
+  "defectId": "DEFECT-03",
+  "title": "Solo Paradox Catalyst Commission Pre-Seeded Counter Bypass on Day 1",
+  "location": "src/App.tsx:124-125 & src/components/WorldAndIntelPanels.tsx:365",
+  "seed": 20260002,
+  "reproductionSteps": [
+    "1. Initialize new game (App.tsx sets customBrewsCount=1, customTrapsCount=1).",
+    "2. On Day 1 in The Rat King Cellar, sell 2 items to Skritch the Under-Bailiff.",
+    "3. Open Catalyst & Saves tab: soloCommissionReady evaluates true because contractHistory.length >= 2 without checking region === blackspire or bilateral buyer diversity.",
+    "4. Click \"Receive Couriered Paradox Catalyst\" to unlock Region IV (The Paradox Vault) on Day 1."
+  ]
+}

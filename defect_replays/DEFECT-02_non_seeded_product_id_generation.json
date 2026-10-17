@@ -1,0 +1,8 @@
+{
+  "defectId": "DEFECT-02",
+  "title": "Custom Brew & Trap Product IDs Use Date.now() and Math.random()",
+  "location": "src/engine/simulation.ts:85 & src/engine/simulation.ts:159",
+  "seed": 20260001,
+  "codeSnippet": "id: `prod_custom_alc_${Date.now()}_${Math.floor(Math.random() * 1000)}`",
+  "explanation": "While simulateRegionExpedition() uses DeterministicRNG(seed + day * 7919), custom product synthesis generates IDs using wall-clock Date.now() and Math.random(), causing save files created at different wall-clock ms to have divergent product IDs even under identical seeds and inputs."
+}

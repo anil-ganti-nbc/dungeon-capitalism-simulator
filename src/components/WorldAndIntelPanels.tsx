@@ -9,6 +9,7 @@ import {
   RegionId
 } from '../types/game';
 import { generatePeerCatalystCode } from '../engine/simulation';
+import { Sim001AuditPanel } from './Sim001AuditPanel';
 
 interface IntelPanelProps {
   day: number;
@@ -429,6 +430,7 @@ export const ArchivesAndCatalystPanel: React.FC<ArchivesAndCatalystProps> = ({
   onExportSaveJson,
   onImportSaveJson
 }) => {
+  const [subView, setSubView] = useState<'SIM_001' | 'CATALYST_SAVES'>('SIM_001');
   const [peerInputCode, setPeerInputCode] = useState('');
   const [peerFeedback, setPeerFeedback] = useState<string | null>(null);
   const [saveJsonText, setSaveJsonText] = useState('');
@@ -447,7 +449,39 @@ export const ArchivesAndCatalystPanel: React.FC<ArchivesAndCatalystProps> = ({
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+    <div className="space-y-6">
+      <div className="bg-[#131822] border border-slate-800 rounded-xl p-3 flex flex-wrap items-center justify-between gap-3">
+        <div className="text-xs font-mono text-slate-300">
+          ARCHIVES &amp; INDEPENDENT AUDIT WORKSPACE
+        </div>
+        <div className="flex gap-1 bg-[#0B0E14] p-1 rounded-lg border border-slate-800">
+          <button
+            onClick={() => setSubView('SIM_001')}
+            className={`px-3 py-1.5 text-xs font-mono rounded cursor-pointer whitespace-nowrap shrink-0 ${
+              subView === 'SIM_001'
+                ? 'bg-amber-600 text-slate-950 font-semibold'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            SIM-001 Stress &amp; Balance Report (5,000 Campaigns)
+          </button>
+          <button
+            onClick={() => setSubView('CATALYST_SAVES')}
+            className={`px-3 py-1.5 text-xs font-mono rounded cursor-pointer whitespace-nowrap shrink-0 ${
+              subView === 'CATALYST_SAVES'
+                ? 'bg-amber-600 text-slate-950 font-semibold'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            Paradox Catalyst Gate &amp; Save Ledger
+          </button>
+        </div>
+      </div>
+
+      {subView === 'SIM_001' ? (
+        <Sim001AuditPanel />
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
       {/* Left 7 Cols: Paradox Catalyst Gate & Provenance Gift Ledger */}
       <div className="lg:col-span-7 space-y-6">
         <div className="bg-[#131822] border border-slate-800 rounded-xl p-5">
@@ -635,6 +669,8 @@ export const ArchivesAndCatalystPanel: React.FC<ArchivesAndCatalystProps> = ({
           </div>
         </div>
       </div>
+      </div>
+      )}
     </div>
   );
 };

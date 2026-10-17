@@ -1,0 +1,11 @@
+{
+  "defectId": "DEFECT-05",
+  "title": "Offline Peer Catalyst Validator Checks Regex Shape Without Verifying Hash Signature",
+  "location": "src/engine/simulation.ts:357",
+  "seed": 20260004,
+  "reproductionSteps": [
+    "1. Open Catalyst & Saves tab.",
+    "2. Enter \"CATALYST-TESTER-D1-999999\" (where 999999 is not the hashString output of PARADOX_CATALYST_TESTER_1).",
+    "3. verifyAndParseCatalystCode() accepts the code because it matches /^CATALYST-([A-Z0-9]{3,12})-D(\\d+)-([A-Z0-9]{6,12})$/."
+  ]
+}

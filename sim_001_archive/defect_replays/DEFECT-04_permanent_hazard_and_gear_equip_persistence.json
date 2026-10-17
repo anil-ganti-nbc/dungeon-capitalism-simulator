@@ -1,0 +1,7 @@
+{
+  "defectId": "DEFECT-04",
+  "title": "Installed Traps & Equipped Party Potions Never Deplete Across Expeditions",
+  "location": "src/App.tsx:321,333 & src/engine/simulation.ts:191-203",
+  "seed": 20260003,
+  "explanation": "Selling a single potion or trap prepends its productId to party.equippedProducts or master.installedHazards (capped at 3 slots). Subsequent expeditions reuse those equipped items indefinitely without consuming potion doses or charging trap reset maintenance."
+}
