@@ -1,0 +1,94 @@
+ART-002 / SOL / 18 OCTOBER 2026
+EXPLORATORY CONCEPTS. NO STYLE SELECTED. NOT PRODUCTION ASSETS.
+
+OPEN IN THIS ORDER
+1. a-trade, b-trade, c-trade; a-replay, b-replay, c-replay.
+2. comparison-sheet (all six at their original logical size).
+3. a-workshop-xlarge, functional-symbol-sheet, decision-card, asset-map.
+Every visual has an SVG with live text elements and a 3x PNG preview.
+Six portrait SVGs: 375 x 812 logical pixels. Workshop: 412 x 915.
+PNG previews are 1125 x 2436 and 1236 x 2745 respectively.
+
+COMMON SCENARIO / ALL VALUES ILLUSTRATIVE
+No simulation, transaction, raid or acceptance test was executed to make these images.
+Existing clients: Skritch the Under-Bailiff / The Cobblestone Irregulars.
+Day 1, Rat King's Cellar. Merchant cash 680g; DM budget 650g, trust 65/100.
+Buyer party budget 520g, trust 72/100, one purchased charge in four capacity slots.
+Offer: prod_chicken_morph / Bantam Chicken-Morph Draught; shop stock 3; quantity 1.
+Price tier 100%, illustrative market factor 1.000, warranty ON, exclusivity OFF,
+visible maker mark, no bilateral premium, no quality premium, no secret offset.
+Catalogue suggested price 165g x 1.12 warranty = 184.8g, rounded quote 185g.
+At trust 72 there is no trust-price premium or boycott. Expected trust change +6.
+This is a coherent illustrative quote, NOT a captured deterministic market day.
+After this sale, purchased capacity would be 2/4; action is pre-sale.
+
+Replay is a later, illustrative resolved report, NOT the actual executed consequence
+of the pre-sale screen. Halvar's assumed base mass 84kg plus the product's -65kg
+effect gives 19kg. Room 1 of 3, Threshold Flagstone Gallery; normal 45kg plate;
+TRAP_BYPASSED, damage 0, loot 240g. These facts are identical in A/B/C.
+Positions are illustrative staging, not measured coordinates or sensor timing.
+Chicken art is justified by the explicit morph scenario, never by low mass alone.
+
+READ-ONLY SOURCE REFERENCE
+https://github.com/anil-ganti-nbc/dungeon-capitalism-simulator/tree/6722ac6edd8ed37633db56804517c859a58829df
+Inspected catalogue, game types, crafting panels, economyEngine and simulation.
+This development candidate is NOT independently accepted by this art task.
+Names and component roles follow source; displayed numeric state is illustrative.
+The shared candidate predicate triggers inversion at mass <25kg. The workshop
+warning deliberately does not repeat the catalogue's inconsistent heavy-mass prose.
+
+WORKSHOP COMPONENT IDS (EXISTING 45KG BLUEPRINT)
+trigger: part_trg_01 / Rusted Iron Pressure Plate (45kg)
+concealment: part_con_02 / Loose Cobble Veneer
+delivery: part_del_03 / Recessed Crossbow Battery
+payload: part_pay_01 / Sharpened Bog-Iron Spikes
+power: part_pow_02 / Lead Counterweight Pulley
+reset: part_rst_02 / Ratchet & Pawl Dual-Cam
+Selected catalogue reference: prod_trap_plate_spikes, illustrative stock 4.
+That is the selected catalogue blueprint, not a claim that new assemblies keep
+the same ID. The actual assembly output uses its canonical composition identity.
+Assembly produces 2 units. Illustrative spot cost 0g assumes all six parts are
+owned; consuming owned materials is not free inventory creation.
+Temporal charge balance is n/a: no rewind module or installed trap is selected.
+
+LAYOUT AND ACCESSIBILITY NOTES
+Normal body/control values 16-18px; workshop XLarge body 21px, labels 18px.
+All depicted interactive targets are at least 48px high; workshop rows are 61px.
+Main actions are near the bottom; decorative captions sit outside essential content.
+Master uses a square cool-colour keep; hero uses a round warmer badge.
+Known facts use a receipt/check; rumours use a dashed speech outline/question mark.
+Red/green differentiation is unnecessary. Outcome, units, terms and causes are text.
+SVG text remains editable/searchable; a future game must use semantic live text,
+not these image snapshots for controls or mechanical values.
+For translations roughly 40% longer, rows and actions must wrap and grow; use
+vertical document scroll, preserve safe-area padding, and never shrink/clamp critical
+text to hold this exact screenshot height. This is a layout rule, not runtime proof.
+No touch/browser/screen-reader/device acceptance is claimed from static concepts.
+Motion note only: optional short state swap; immediate swap under reduced motion.
+No animation files, cutscenes, production sprites, fonts or textures were made.
+
+RECOMMENDATION / DESIGN JUDGEMENT ONLY
+A is strongest for a readable merchant satire: clear quote block, receipt grammar,
+short setting strip and a compact causal drawing. Risk: too much paperwork.
+B gives the most immediate atmosphere, at the cost of more silhouette separation
+and custom profiles. C has the simplest modular tiles but risks a tool-panel tone.
+A0 stays within A: remove portraits/strip; preserve type, symbols and receipt rules.
+All scores in the decision card are art-direction judgements, not tested ratings.
+
+ASSET MAP
+Future A allowance: 14 symbols + 2 medallions + 2 strips + 3 tokens + 1 room frame
++ 1 Cellar motif + 1 bottle motif = 24 authored art units; no per-recipe pictures.
+Ordinary borders, text, trigger plates, overlays, arrows, diagrams and touch areas
+are existing React/CSS/2D Canvas primitives. No renderer overhaul is proposed.
+Estimate only: 256-512KiB compressed art; ~3.4MiB RGBA raster fallback (2 strips
+at 1024x256 + 22 at 128x128); reserve 8MiB including duplicate decode/overhead.
+These estimates concern a future runtime slice, NOT these large review PNGs.
+A0 would use 14 authored symbols. No remote assets or fonts; system type initially.
+
+REVIEW AND BOUNDARY
+349 text-width checks and visual render review were performed on the concepts.
+No gameplay, simulation, catalogue, save, production UI or engineering branch edit.
+Only static concept files are published on sol/art-002-concepts under design/art-002/.
+No PR to main. Operator selection requested: A / B / C / none or revise.
+Graphical implementation still requires independent foundation acceptance and
+separate explicit operator authorisation.
