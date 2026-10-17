@@ -1,0 +1,6 @@
+{
+  "name": "Trap & Tonic: Conflict of Interest",
+  "description": "A deterministic dark-fantasy merchant and economic simulation where you supply both dungeon masters with lethal traps and adventuring parties with the potions to survive them.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
