@@ -404,12 +404,14 @@ export const SpecialisationsPanel: React.FC<SpecialisationsProps> = ({
 interface ArchivesAndCatalystProps {
   day: number;
   seed: number;
+  blackspireUnlocked: boolean;
   expertUnlocked: boolean;
   catalystLedger: ParadoxCatalystEntry[];
   expeditionReports: ExpeditionReport[];
   customBrewsCount: number;
   customTrapsCount: number;
-  bilateralSalesCount: number;
+  masterSalesCount: number;
+  heroSalesCount: number;
   onClaimSoloDmCatalyst: () => void;
   onImportPeerCatalyst: (code: string) => { valid: boolean; message: string };
   onExportSaveJson: () => string;
@@ -419,12 +421,14 @@ interface ArchivesAndCatalystProps {
 export const ArchivesAndCatalystPanel: React.FC<ArchivesAndCatalystProps> = ({
   day,
   seed,
+  blackspireUnlocked,
   expertUnlocked,
   catalystLedger,
   expeditionReports,
   customBrewsCount,
   customTrapsCount,
-  bilateralSalesCount,
+  masterSalesCount,
+  heroSalesCount,
   onClaimSoloDmCatalyst,
   onImportPeerCatalyst,
   onExportSaveJson,
@@ -439,8 +443,12 @@ export const ArchivesAndCatalystPanel: React.FC<ArchivesAndCatalystProps> = ({
   const outboundShareCode = generatePeerCatalystCode('HOUSE_MERCHANT', day);
   const sampleValidPeerCode = generatePeerCatalystCode('VESPERA_ENVOY', day + 1);
 
+  const bilateralVerified = masterSalesCount >= 2 && heroSalesCount >= 2;
   const soloCommissionReady =
-    customBrewsCount >= 1 && customTrapsCount >= 1 && bilateralSalesCount >= 2;
+    blackspireUnlocked &&
+    customBrewsCount >= 2 &&
+    customTrapsCount >= 2 &&
+    bilateralVerified;
 
   const handlePeerSubmit = () => {
     const res = onImportPeerCatalyst(peerInputCode);
@@ -452,22 +460,22 @@ export const ArchivesAndCatalystPanel: React.FC<ArchivesAndCatalystProps> = ({
     <div className="space-y-6">
       <div className="bg-[#131822] border border-slate-800 rounded-xl p-3 flex flex-wrap items-center justify-between gap-3">
         <div className="text-xs font-mono text-slate-300">
-          ARCHIVES &amp; INDEPENDENT AUDIT WORKSPACE
+          ARCHIVES &amp; INDEPENDENT AUDIT WORKSPACE (SIM-001 BASELINE &amp; SIM-002 REPAIR)
         </div>
         <div className="flex gap-1 bg-[#0B0E14] p-1 rounded-lg border border-slate-800">
           <button
             onClick={() => setSubView('SIM_001')}
-            className={`px-3 py-1.5 text-xs font-mono rounded cursor-pointer whitespace-nowrap shrink-0 ${
+            className={`min-h-[38px] px-3 py-1.5 text-xs font-mono rounded cursor-pointer whitespace-nowrap shrink-0 ${
               subView === 'SIM_001'
                 ? 'bg-amber-600 text-slate-950 font-semibold'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            SIM-001 Stress &amp; Balance Report (5,000 Campaigns)
+            SIM-001 &amp; SIM-002 Empirical Audit (5,000 Campaigns)
           </button>
           <button
             onClick={() => setSubView('CATALYST_SAVES')}
-            className={`px-3 py-1.5 text-xs font-mono rounded cursor-pointer whitespace-nowrap shrink-0 ${
+            className={`min-h-[38px] px-3 py-1.5 text-xs font-mono rounded cursor-pointer whitespace-nowrap shrink-0 ${
               subView === 'CATALYST_SAVES'
                 ? 'bg-amber-600 text-slate-950 font-semibold'
                 : 'text-slate-400 hover:text-slate-200'
@@ -491,11 +499,11 @@ export const ArchivesAndCatalystPanel: React.FC<ArchivesAndCatalystProps> = ({
                 01. The Paradox Catalyst Gate (Hard → Expert)
               </h2>
               <p className="text-xs text-slate-400">
-                Hard Rule: Gold cannot buy The Paradox Vault. An attributable Catalyst must arrive via Solo DM Courier or Offline Peer Exchange.
+                Hard Rule: Requires prior Blackspire Labyrinth (Hard) access + an attributable Catalyst via Vespera’s Commission or Cryptographic Peer Exchange.
               </p>
             </div>
             <span className={`text-xs font-mono font-semibold ${expertUnlocked ? 'text-emerald-400' : 'text-amber-400'}`}>
-              {expertUnlocked ? 'THE PARADOX VAULT UNLOCKED' : 'AWAITING ATTRIBUTABLE CATALYST'}
+              {expertUnlocked ? 'THE PARADOX VAULT UNLOCKED' : 'AWAITING HARD CHARTER & CATALYST'}
             </span>
           </div>
 
@@ -505,39 +513,42 @@ export const ArchivesAndCatalystPanel: React.FC<ArchivesAndCatalystProps> = ({
               ROUTE A · SOLO OFFLINE DUNGEON MASTER COMMISSION (Arch-Architect Vespera)
             </div>
             <p className="text-xs text-slate-300 mb-3">
-              Satisfy Vespera’s three-part engineering &amp; alchemy audit to receive a couriered Paradox Catalyst with zero network requirement:
+              Satisfy Vespera’s four-part Hard-mode engineering, alchemy, and bilateral supply audit to receive a couriered Paradox Catalyst:
             </p>
-            <div className="grid grid-cols-3 gap-2 text-xs font-mono tabular-nums mb-3">
-              <div className={`p-2 rounded border ${customBrewsCount >= 1 ? 'border-emerald-700 text-emerald-400' : 'border-slate-800 text-slate-400'}`}>
-                1. Brew Custom Tonic: {customBrewsCount}/1
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs font-mono tabular-nums mb-3">
+              <div className={`p-2 rounded border ${blackspireUnlocked ? 'border-emerald-700 text-emerald-400' : 'border-slate-800 text-slate-400'}`}>
+                1. Hard Mode (Blackspire): {blackspireUnlocked ? 'UNLOCKED' : 'LOCKED'}
               </div>
-              <div className={`p-2 rounded border ${customTrapsCount >= 1 ? 'border-emerald-700 text-emerald-400' : 'border-slate-800 text-slate-400'}`}>
-                2. Assemble Custom Trap: {customTrapsCount}/1
+              <div className={`p-2 rounded border ${customBrewsCount >= 2 ? 'border-emerald-700 text-emerald-400' : 'border-slate-800 text-slate-400'}`}>
+                2. Custom Alchemy Brews: {customBrewsCount}/2
               </div>
-              <div className={`p-2 rounded border ${bilateralSalesCount >= 2 ? 'border-emerald-700 text-emerald-400' : 'border-slate-800 text-slate-400'}`}>
-                3. Bilateral Sales: {bilateralSalesCount}/2
+              <div className={`p-2 rounded border ${customTrapsCount >= 2 ? 'border-emerald-700 text-emerald-400' : 'border-slate-800 text-slate-400'}`}>
+                3. Custom Trap Assemblies: {customTrapsCount}/2
+              </div>
+              <div className={`p-2 rounded border ${bilateralVerified ? 'border-emerald-700 text-emerald-400' : 'border-slate-800 text-slate-400'}`}>
+                4. Bilateral Contracts: {masterSalesCount}/2 DM · {heroSalesCount}/2 Hero
               </div>
             </div>
             <button
               onClick={onClaimSoloDmCatalyst}
               disabled={!soloCommissionReady || expertUnlocked}
-              className="px-4 py-2 bg-amber-600 hover:bg-amber-500 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-mono font-semibold text-xs rounded-lg cursor-pointer"
+              className="min-h-[42px] px-4 py-2 bg-amber-600 hover:bg-amber-500 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-mono font-semibold text-xs rounded-lg cursor-pointer"
             >
               {expertUnlocked
                 ? 'Catalyst Recorded in Gift Ledger'
                 : soloCommissionReady
                 ? 'Receive Couriered Paradox Catalyst from Arch-Architect Vespera'
-                : 'Complete All 3 Commission Steps Above to Claim Solo Catalyst'}
+                : 'Complete All 4 Hard-Mode Commission Requirements Above'}
             </button>
           </div>
 
           {/* Route B: Offline Peer-to-Peer Catalyst Exchange */}
           <div className="p-4 bg-[#0B0E14] border border-slate-800 rounded-lg">
             <div className="text-xs font-mono text-sky-400 mb-1">
-              ROUTE B · OFFLINE PEER CATALYST EXCHANGE (Local Provenance &amp; Replay Detection)
+              ROUTE B · OFFLINE PEER CATALYST EXCHANGE (Cryptographic Signature &amp; Replay Detection)
             </div>
             <p className="text-xs text-slate-400 mb-3">
-              Share your merchant manifest code with a nearby player or enter a peer’s Catalyst dispatch code. Local replay detection prevents duplicate redemption of the same hash.
+              Once Blackspire Labyrinth (Hard) is unlocked, enter a peer’s signed Catalyst dispatch code. Cryptographic signature verification and local replay detection prevent forged or duplicate hashes.
             </p>
             <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 bg-slate-900 border border-slate-800 rounded text-xs font-mono mb-3">
               <span className="text-slate-300">Your Outbound Peer Dispatch Code:</span>
@@ -549,18 +560,18 @@ export const ArchivesAndCatalystPanel: React.FC<ArchivesAndCatalystProps> = ({
                 type="text"
                 value={peerInputCode}
                 onChange={(e) => setPeerInputCode(e.target.value)}
-                placeholder="Paste Peer Catalyst Code (e.g. CATALYST-VESPERA-D2-A1B2C3D4)"
+                placeholder="Paste Signed Peer Catalyst Code"
                 className="flex-1 bg-slate-900 border border-slate-700 rounded px-3 py-2 text-xs font-mono text-slate-100"
               />
               <button
                 onClick={handlePeerSubmit}
-                className="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-slate-950 font-mono font-semibold text-xs rounded cursor-pointer whitespace-nowrap shrink-0"
+                className="min-h-[40px] px-4 py-2 bg-sky-600 hover:bg-sky-500 text-slate-950 font-mono font-semibold text-xs rounded cursor-pointer whitespace-nowrap shrink-0"
               >
                 Verify &amp; Record Catalyst
               </button>
               <button
                 onClick={() => setPeerInputCode(sampleValidPeerCode)}
-                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-mono text-xs rounded cursor-pointer whitespace-nowrap shrink-0"
+                className="min-h-[40px] px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-mono text-xs rounded cursor-pointer whitespace-nowrap shrink-0"
               >
                 Fill Valid Peer Code
               </button>

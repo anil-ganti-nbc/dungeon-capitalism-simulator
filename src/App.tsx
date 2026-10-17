@@ -8,7 +8,8 @@ import {
   CraftedProduct,
   Reagent,
   TrapPart,
-  SaleContract
+  SaleContract,
+  ScheduledMatchup
 } from './types/game';
 import {
   REAGENTS_CATALOG,
@@ -24,6 +25,10 @@ import {
   INITIAL_INTEL_FEED
 } from './data/world';
 import {
+  SIM_RULES_VERSION,
+  computeCanonicalFormulaSignature,
+  mergeCraftedProductIntoInventory,
+  getRegionEncounterSchedule,
   simulateRegionExpedition,
   verifyAndParseCatalystCode
 } from './engine/simulation';
@@ -39,9 +44,21 @@ import {
   SpecialisationsPanel,
   ArchivesAndCatalystPanel
 } from './components/WorldAndIntelPanels';
+import { PWAInstallButton, OfflineIndicator } from './components/PWAInstallWidgets';
 
-const SAVE_STORAGE_KEY = 'trap_and_tonic_save_v1';
-const SAVE_BACKUP_KEY = 'trap_and_tonic_backup_v1';
+const SAVE_STORAGE_KEY = 'trap_and_tonic_save_v2';
+const SAVE_BACKUP_KEY = 'trap_and_tonic_backup_v2';
+const LEGACY_SAVE_KEY = 'trap_and_tonic_save_v1';
+
+function buildInitialScheduledMatchups(): Record<RegionId, ScheduledMatchup> {
+  const result = {} as Record<RegionId, ScheduledMatchup>;
+  (['cellar', 'warrens', 'blackspire', 'vault'] as const).forEach((reg) => {
+    const m = INITIAL_MASTERS.find((x) => x.region === reg) || INITIAL_MASTERS[0];
+    const p = INITIAL_PARTIES.find((x) => x.region === reg) || INITIAL_PARTIES[0];
+    result[reg] = { masterId: m.id, partyId: p.id };
+  });
+  return result;
+}
 
 function createInitialSaveState(): GameSaveState {
   const initReagents: Record<string, number> = {};
@@ -53,8 +70,19 @@ function createInitialSaveState(): GameSaveState {
     initParts[p.id] = 2;
   });
 
+  const canonicalInitialProducts: CraftedProduct[] = INITIAL_PRODUCTS.map((p) => {
+    const kind = p.category === 'TRAP_MASTER' || p.category === 'HAZARD_MONSTER' ? 'trp' : 'alc';
+    const sig = computeCanonicalFormulaSignature(kind, p.recipeComponents, [], SIM_RULES_VERSION);
+    return {
+      ...p,
+      formulaSignature: sig,
+      rulesVersion: SIM_RULES_VERSION,
+      appliedSkills: []
+    };
+  });
+
   return {
-    version: '1.0.0',
+    version: '2.0.0-sim002',
     seed: 20261017,
     day: 1,
     phase: 'MORNING',
@@ -63,10 +91,17 @@ function createInitialSaveState(): GameSaveState {
     gold: 1850,
     debt: 0,
     skillPoints: 2,
+    customBrewsCount: 0,
+    customTrapsCount: 0,
+    scheduledMatchups: buildInitialScheduledMatchups(),
     reagentInventory: initReagents,
     partInventory: initParts,
-    products: INITIAL_PRODUCTS.map((p) => ({ ...p })),
-    masters: INITIAL_MASTERS.map((m) => ({ ...m, memoryLog: [...m.memoryLog], installedHazards: [...m.installedHazards] })),
+    products: canonicalInitialProducts,
+    masters: INITIAL_MASTERS.map((m) => ({
+      ...m,
+      memoryLog: [...m.memoryLog],
+      installedHazards: [...m.installedHazards]
+    })),
     parties: INITIAL_PARTIES.map((p) => ({
       ...p,
       members: p.members.map((mem) => ({ ...mem })),
@@ -100,16 +135,43 @@ function createInitialSaveState(): GameSaveState {
     expertUnlocked: false,
     skills: SKILL_TREE_NODES.map((s) => ({ ...s })),
     basiliskChainStage: 1,
-    blackspireResolution: 'NONE'
+    blackspireResolution: 'NONE',
+    insolvencyEvents: 0
   };
 }
+
+function normalizeLoadedSave(parsed: Partial<GameSaveState>): GameSaveState {
+  const base = createInitialSaveState();
+  return {
+    ...base,
+    ...parsed,
+    customBrewsCount: typeof parsed.customBrewsCount === 'number' ? parsed.customBrewsCount : 0,
+    customTrapsCount: typeof parsed.customTrapsCount === 'number' ? parsed.customTrapsCount : 0,
+    scheduledMatchups: {
+      ...base.scheduledMatchups,
+      ...(parsed.scheduledMatchups || {})
+    }
+  };
+}
+
+const WORKSPACE_NAV_ITEMS: Array<{ id: WorkspaceTab; label: string; shortLabel: string }> = [
+  { id: 'DAY_DESK', label: 'Bilateral Desk', shortLabel: 'Trade' },
+  { id: 'ALCHEMY_LAB', label: 'Alchemy Lab', shortLabel: 'Alchemy' },
+  { id: 'TRAP_WORKSHOP', label: 'Trap Workshop', shortLabel: 'Traps' },
+  { id: 'EXPEDITION_MAP', label: 'Expedition Arena', shortLabel: 'Arena' },
+  { id: 'INTEL_RUMOURS', label: 'Intel & Story', shortLabel: 'Intel' },
+  { id: 'FINANCIALS', label: 'Charters & Ledger', shortLabel: 'Charters' },
+  { id: 'CLIENT_LEDGER', label: 'Clients', shortLabel: 'Clients' },
+  { id: 'SPECIALISATIONS', label: 'Skills', shortLabel: 'Skills' },
+  { id: 'ARCHIVES_CATALYST', label: 'Catalyst & Audit', shortLabel: 'Catalyst' }
+];
 
 export default function App() {
   const [shellState, setShellState] = useState<GameShellState>('TITLE_MENU');
   const [activeTab, setActiveTab] = useState<WorkspaceTab>('DAY_DESK');
   const [activeRoomIdx, setActiveRoomIdx] = useState<number>(0);
   const [statusBanner, setStatusBanner] = useState<string>(
-    'Morning Ledger Open: Inspect Verified Facts, brew tonics or traps, supply both sides, and resolve the expedition.'
+    'Morning Ledger Open: Inspect Verified Facts, brew tonics or traps, supply both sides, and resolve the scheduled expedition.'
   );
 
   const [a11y, setA11y] = useState<AccessibilitySettings>({
@@ -123,11 +185,14 @@ export default function App() {
 
   const [gameState, setGameState] = useState<GameSaveState>(() => {
     try {
-      const raw = localStorage.getItem(SAVE_STORAGE_KEY) || localStorage.getItem(SAVE_BACKUP_KEY);
+      const raw =
+        localStorage.getItem(SAVE_STORAGE_KEY) ||
+        localStorage.getItem(SAVE_BACKUP_KEY) ||
+        localStorage.getItem(LEGACY_SAVE_KEY);
       if (raw) {
-        const parsed = JSON.parse(raw) as GameSaveState;
+        const parsed = JSON.parse(raw) as Partial<GameSaveState>;
         if (parsed && typeof parsed.day === 'number' && Array.isArray(parsed.products)) {
-          return parsed;
+          return normalizeLoadedSave(parsed);
         }
       }
     } catch {
@@ -136,10 +201,7 @@ export default function App() {
     return createInitialSaveState();
   });
 
-  const [customBrewsCount, setCustomBrewsCount] = useState<number>(1);
-  const [customTrapsCount, setCustomTrapsCount] = useState<number>(1);
-
-  // Atomic save rotation on state update & app lifecycle interruption
+  // Atomic save rotation on state update & app lifecycle interruption (F08)
   const persistAtomicSave = useCallback((stateToSave: GameSaveState) => {
     try {
       const prev = localStorage.getItem(SAVE_STORAGE_KEY);
@@ -162,9 +224,13 @@ export default function App() {
         persistAtomicSave(gameState);
       }
     };
+    const onPageHide = () => persistAtomicSave(gameState);
     window.addEventListener('visibilitychange', onVisibilityChange);
-    window.addEventListener('pagehide', () => persistAtomicSave(gameState));
-    return () => window.removeEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('pagehide', onPageHide);
+    return () => {
+      window.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('pagehide', onPageHide);
+    };
   }, [gameState, persistAtomicSave]);
 
   // Escape key to toggle Pause / Settings Modal during play
@@ -190,6 +256,35 @@ export default function App() {
     [gameState.skills]
   );
 
+  // F01: Compute active scheduled encounter & next rotation for the current region
+  const activeRegionSchedule = useMemo(
+    () =>
+      getRegionEncounterSchedule(
+        gameState.activeRegion,
+        gameState.day,
+        gameState.masters,
+        gameState.parties,
+        gameState.scheduledMatchups
+      ),
+    [
+      gameState.activeRegion,
+      gameState.day,
+      gameState.masters,
+      gameState.parties,
+      gameState.scheduledMatchups
+    ]
+  );
+
+  const handleSelectScheduledMatchup = useCallback((masterId: string, partyId: string) => {
+    setGameState((prev) => ({
+      ...prev,
+      scheduledMatchups: {
+        ...prev.scheduledMatchups,
+        [prev.activeRegion]: { masterId, partyId }
+      }
+    }));
+  }, []);
+
   // Load "The Basilisk Supply Chain" Scenario (Unlocks Warrens immediately & stages Grimthorn + Silver Stag)
   const handleLoadBasiliskScenario = useCallback(() => {
     const base = createInitialSaveState();
@@ -197,6 +292,10 @@ export default function App() {
     base.activeRegion = 'warrens';
     base.gold = 3400;
     base.phase = 'TRADE';
+    base.scheduledMatchups.warrens = {
+      masterId: 'dm_warrens_1',
+      partyId: 'pty_warrens_1'
+    };
     setGameState(base);
     setShellState('PLAYING');
     setActiveTab('DAY_DESK');
@@ -206,11 +305,10 @@ export default function App() {
     soundFX.playCatalystChord();
   }, []);
 
-  // Brew Alchemy Product
+  // F02 Fix: Brew Alchemy Product with Canonical Composition Identity
   const handleBrewProduct = useCallback(
     (product: CraftedProduct, spotCost: number, consumedIds: string[], batchSize: number) => {
       soundFX.playBrew();
-      setCustomBrewsCount((c) => c + 1);
       setGameState((prev) => {
         const nextReagents = { ...prev.reagentInventory };
         consumedIds.forEach((id) => {
@@ -219,35 +317,30 @@ export default function App() {
           }
         });
 
-        const existingIdx = prev.products.findIndex((p) => p.name === product.name);
-        let nextProducts = [...prev.products];
-        if (existingIdx >= 0) {
-          nextProducts[existingIdx] = {
-            ...nextProducts[existingIdx],
-            stock: nextProducts[existingIdx].stock + batchSize
-          };
-        } else {
-          nextProducts = [{ ...product, stock: batchSize }, ...nextProducts];
-        }
+        const nextProducts = mergeCraftedProductIntoInventory(prev.products, product, batchSize);
 
         return {
           ...prev,
           phase: 'PREPARATION',
           gold: prev.gold - spotCost,
+          customBrewsCount: prev.customBrewsCount + 1,
           reagentInventory: nextReagents,
           products: nextProducts
         };
       });
-      setStatusBanner(`Synthesized ${batchSize}x ${product.name} (${product.sulphurVulnerable ? 'Sulphur Vulnerable' : 'Sulphur Safe'}).`);
+      setStatusBanner(
+        `Synthesized ${batchSize}x ${product.name} [#${product.formulaSignature}] (${
+          product.sulphurVulnerable ? 'Sulphur Vulnerable' : 'Sulphur Safe'
+        }).`
+      );
     },
     []
   );
 
-  // Assemble Trap Product
+  // F02 Fix: Assemble Trap Product with Canonical Composition Identity
   const handleAssembleTrap = useCallback(
     (trapProduct: CraftedProduct, spotCost: number, consumedIds: string[]) => {
       soundFX.playRatchet();
-      setCustomTrapsCount((c) => c + 1);
       setGameState((prev) => {
         const nextParts = { ...prev.partInventory };
         consumedIds.forEach((id) => {
@@ -256,27 +349,19 @@ export default function App() {
           }
         });
 
-        const existingIdx = prev.products.findIndex((p) => p.name === trapProduct.name);
-        let nextProducts = [...prev.products];
-        if (existingIdx >= 0) {
-          nextProducts[existingIdx] = {
-            ...nextProducts[existingIdx],
-            stock: nextProducts[existingIdx].stock + 2
-          };
-        } else {
-          nextProducts = [{ ...trapProduct, stock: 2 }, ...nextProducts];
-        }
+        const nextProducts = mergeCraftedProductIntoInventory(prev.products, trapProduct, 2);
 
         return {
           ...prev,
           phase: 'PREPARATION',
           gold: prev.gold - spotCost,
+          customTrapsCount: prev.customTrapsCount + 1,
           partInventory: nextParts,
           products: nextProducts
         };
       });
       setStatusBanner(
-        `Assembled 2x ${trapProduct.name} (Trigger Threshold: ${trapProduct.triggerMassThresholdKg}kg, DC ${trapProduct.detectionDC}).`
+        `Assembled 2x ${trapProduct.name} [#${trapProduct.formulaSignature}] (Trigger: ${trapProduct.triggerMassThresholdKg}kg, DC ${trapProduct.detectionDC}).`
       );
     },
     []
@@ -334,8 +419,9 @@ export default function App() {
             ? prev.masters.find((m) => m.id === buyerId)?.name || 'Master'
             : prev.parties.find((p) => p.id === buyerId)?.name || 'Party';
 
+        const contractSeq = prev.contractHistory.length + 1;
         const newContract: SaleContract = {
-          id: `cnt_d${prev.day}_${Date.now()}_${Math.floor(Math.random() * 999)}`,
+          id: `cnt_d${prev.day}_n${contractSeq}_${product.id}`,
           day: prev.day,
           buyerType,
           buyerId,
@@ -363,7 +449,10 @@ export default function App() {
               budget: Math.max(0, m.budget - unitPrice),
               trust: Math.min(100, m.trust + (warrantyBacked ? 5 : 2)),
               installedHazards: Array.from(new Set([product.id, ...m.installedHazards])).slice(0, 3),
-              memoryLog: [...m.memoryLog, `Day ${prev.day}: Bought ${product.name} for ${unitPrice}g.`]
+              memoryLog: [
+                ...m.memoryLog,
+                `Day ${prev.day}: Bought ${product.name} [#${product.formulaSignature || product.id.slice(-6)}] for ${unitPrice}g.`
+              ]
             };
           }
           return m;
@@ -376,11 +465,24 @@ export default function App() {
               budget: Math.max(0, p.budget - unitPrice),
               trust: Math.min(100, p.trust + (warrantyBacked ? 6 : 3)),
               equippedProducts: Array.from(new Set([product.id, ...p.equippedProducts])).slice(0, 3),
-              memoryLog: [...p.memoryLog, `Day ${prev.day}: Bought ${product.name} for ${unitPrice}g.`]
+              memoryLog: [
+                ...p.memoryLog,
+                `Day ${prev.day}: Bought ${product.name} [#${product.formulaSignature || product.id.slice(-6)}] for ${unitPrice}g.`
+              ]
             };
           }
           return p;
         });
+
+        // Also ensure buyer is set in scheduledMatchups for their region
+        const currentSched = prev.scheduledMatchups[prev.activeRegion] || {
+          masterId: prev.masters[0].id,
+          partyId: prev.parties[0].id
+        };
+        const updatedRegionSched =
+          buyerType === 'MASTER'
+            ? { ...currentSched, masterId: buyerId }
+            : { ...currentSched, partyId: buyerId };
 
         return {
           ...prev,
@@ -389,25 +491,36 @@ export default function App() {
           products: nextProducts,
           masters: nextMasters,
           parties: nextParties,
+          scheduledMatchups: {
+            ...prev.scheduledMatchups,
+            [prev.activeRegion]: updatedRegionSched
+          },
           contractsToday: [...prev.contractsToday, newContract],
           contractHistory: [...prev.contractHistory, newContract]
         };
       });
 
       setStatusBanner(
-        `Sold 1x ${product.name} to ${buyerType === 'MASTER' ? 'Dungeon Master' : 'Adventuring Party'} for +${unitPrice}g!`
+        `Sold 1x ${product.name} [#${product.formulaSignature || product.id.slice(-6)}] to ${
+          buyerType === 'MASTER' ? 'Dungeon Master' : 'Adventuring Party'
+        } for +${unitPrice}g!`
       );
     },
     []
   );
 
-  // Resolve Seeded Expedition & Advance Day
+  // F01 & F04/F05 Fix: Resolve Explicitly Scheduled Expedition & Advance Day with Real Debt/Consumption Math
   const handleLaunchExpedition = useCallback(() => {
     setGameState((prev) => {
-      const regionMasters = prev.masters.filter((m) => m.region === prev.activeRegion);
-      const regionParties = prev.parties.filter((p) => p.region === prev.activeRegion);
-      const master = regionMasters[(prev.day - 1) % regionMasters.length] || prev.masters[0];
-      const party = regionParties[(prev.day - 1) % regionParties.length] || prev.parties[0];
+      const schedule = getRegionEncounterSchedule(
+        prev.activeRegion,
+        prev.day,
+        prev.masters,
+        prev.parties,
+        prev.scheduledMatchups
+      );
+      const master = schedule.currentMaster;
+      const party = schedule.currentParty;
 
       const report = simulateRegionExpedition(
         prev.day,
@@ -418,31 +531,60 @@ export default function App() {
         prev.contractsToday
       );
 
-      // Accounting math
+      // Accounting math (SIM-002 Reconstructed Economy)
       const grossRevenue = prev.contractsToday.reduce((acc, c) => acc + c.totalRevenue, 0);
       const cogs = prev.contractsToday.reduce((acc, c) => acc + c.unitCost * c.quantity, 0);
       const grossMargin = grossRevenue - cogs;
-      const overheadAndStorage = 45 + prev.unlockedRegions.length * 25;
+      const overheadAndStorage = 35 + prev.unlockedRegions.length * 20;
 
       const hasWarrantyShield = prev.skills.some((s) => s.effectKey === 'warranty_shield' && s.unlocked);
       const warrantyClaims = Math.round(
         report.warrantyClaimsTriggered * 165 * (hasWarrantyShield ? 0.6 : 1)
       );
       const fines = report.exclusivityBreachDetected ? 240 : 0;
-      const interest = Math.round(prev.debt * 0.05);
+
+      const cheapCredit = prev.skills.some((s) => s.effectKey === 'cheap_credit' && s.unlocked);
+      const dailyInterestRate = cheapCredit ? 0.003 : 0.005;
+      const interest = Math.round(prev.debt * dailyInterestRate);
 
       const netProfit = grossMargin - overheadAndStorage - warrantyClaims - fines - interest;
-      const endingCash = Math.max(120, prev.gold - overheadAndStorage - warrantyClaims - fines - interest);
-      const inventoryVal = prev.products.reduce((acc, p) => acc + p.stock * p.productionCost, 0);
-      const netWorth = endingCash + inventoryVal - prev.debt;
+      const rawEndingCash = prev.gold - overheadAndStorage - warrantyClaims - fines - interest;
 
-      // Update Master & Party memory + budgets from expedition outcome
+      // Remove silent 120g bailout floor: if rawEndingCash < 0, capitalize deficit into debt!
+      let endingCash = rawEndingCash;
+      let nextDebt = prev.debt;
+      let nextInsolvencyEvents = prev.insolvencyEvents || 0;
+
+      if (rawEndingCash < 0) {
+        nextDebt += Math.abs(rawEndingCash);
+        endingCash = 0;
+        nextInsolvencyEvents += 1;
+      } else if (nextDebt > 0 && netProfit > 0 && endingCash > 800) {
+        // Auto-amortize 25% of positive net profit when liquid cash > 800g
+        const autoPaydown = Math.min(nextDebt, Math.min(endingCash - 600, Math.round(netProfit * 0.25)));
+        if (autoPaydown > 0) {
+          nextDebt -= autoPaydown;
+          endingCash -= autoPaydown;
+        }
+      }
+
+      const inventoryVal = prev.products.reduce((acc, p) => acc + p.stock * p.productionCost, 0);
+      const netWorth = endingCash + inventoryVal - nextDebt;
+
+      // Update Master & Party memory + budgets + consumable wear from expedition outcome
+      const autoResetSkill = prev.skills.some((s) => s.effectKey === 'auto_reset_cam' && s.unlocked);
       const nextMasters = prev.masters.map((m) => {
         if (m.id === master.id) {
           const lastRoom = report.rooms[report.rooms.length - 1];
+          // Deplete oldest trap every 3 delves unless auto-reset skill is unlocked
+          const retainedHazards =
+            !autoResetSkill && prev.day % 3 === 0 && m.installedHazards.length > 1
+              ? m.installedHazards.slice(0, -1)
+              : m.installedHazards;
           return {
             ...m,
             budget: Math.max(450, m.budget + report.masterTreasuryDelta + 320),
+            installedHazards: retainedHazards,
             memoryLog: [...m.memoryLog, `Day ${prev.day} After-Action: ${lastRoom.learnedByMaster}`],
             desiredTrait: report.doubleSaleDemandCreated[0] || m.desiredTrait
           };
@@ -453,10 +595,16 @@ export default function App() {
       const nextParties = prev.parties.map((p) => {
         if (p.id === party.id) {
           const lastRoom = report.rooms[report.rooms.length - 1];
+          // Consume oldest potion charge after expedition if >1 equipped or on reaction failure
+          const consumedLoadout =
+            (report.warrantyClaimsTriggered > 0 || prev.day % 2 === 0) && p.equippedProducts.length > 1
+              ? p.equippedProducts.slice(0, -1)
+              : p.equippedProducts;
           return {
             ...p,
             budget: Math.max(420, p.budget + report.partyBudgetDelta + 290),
             trust: Math.max(15, p.trust - report.warrantyClaimsTriggered * 12),
+            equippedProducts: consumedLoadout,
             memoryLog: [...p.memoryLog, `Day ${prev.day} After-Action: ${lastRoom.learnedByHeroes}`],
             desiredCounter:
               report.doubleSaleDemandCreated.find((d) => d.includes(p.name)) || p.desiredCounter
@@ -467,7 +615,7 @@ export default function App() {
 
       // Generate new Morning Intel item from actual causal expedition outcome
       const newFact = {
-        id: `intel_d${prev.day + 1}_${Date.now()}`,
+        id: `intel_d${prev.day + 1}_${report.id}`,
         day: prev.day + 1,
         timestamp: '06:00 AM',
         region: prev.activeRegion,
@@ -486,9 +634,18 @@ export default function App() {
         day: prev.day + 1,
         phase: 'EVENING',
         gold: endingCash,
+        debt: nextDebt,
+        insolvencyEvents: nextInsolvencyEvents,
         skillPoints: prev.skillPoints + 1,
         masters: nextMasters,
         parties: nextParties,
+        scheduledMatchups: {
+          ...prev.scheduledMatchups,
+          [prev.activeRegion]: {
+            masterId: schedule.nextMaster.id,
+            partyId: schedule.nextParty.id
+          }
+        },
         contractsToday: [],
         intelFeed: [newFact, ...prev.intelFeed],
         expeditionReports: [report, ...prev.expeditionReports],
@@ -505,7 +662,7 @@ export default function App() {
             netProfit,
             endingCash,
             inventoryValue: inventoryVal,
-            debt: prev.debt,
+            debt: nextDebt,
             netWorth
           },
           ...prev.financialLedger
@@ -545,19 +702,31 @@ export default function App() {
     []
   );
 
-  // Claim Solo Offline DM Paradox Catalyst (from Arch-Architect Vespera)
+  // F03 Fix: Claim Solo Offline DM Paradox Catalyst (Requires Hard Mode + 2 Custom Brews + 2 Custom Traps + 2 DM & 2 Hero Sales)
   const handleClaimSoloDmCatalyst = useCallback(() => {
-    soundFX.playCatalystChord();
     setGameState((prev) => {
-      const hash = hashString(`SOLO_VESPERA_CATALYST_DAY_${prev.day}`).slice(0, 8);
+      const masterSales = prev.contractHistory.filter((c) => c.buyerType === 'MASTER').length;
+      const heroSales = prev.contractHistory.filter((c) => c.buyerType === 'HERO').length;
+      if (
+        !prev.unlockedRegions.includes('blackspire') ||
+        prev.customBrewsCount < 2 ||
+        prev.customTrapsCount < 2 ||
+        masterSales < 2 ||
+        heroSales < 2
+      ) {
+        return prev;
+      }
+
+      soundFX.playCatalystChord();
+      const hash = hashString(`SOLO_VESPERA_CATALYST_DAY_${prev.day}_${prev.seed}`).slice(0, 8).toUpperCase();
       const entry = {
-        id: `cat_solo_${Date.now()}`,
+        id: `cat_solo_d${prev.day}_${hash.toLowerCase()}`,
         senderName: 'Arch-Architect Vespera (Blackspire Panopticon)',
         senderType: 'SOLO_DM_COURIER' as const,
         provenanceHash: hash,
         dayReceived: prev.day,
         commissionNote:
-          'Solo Offline Commission Fulfilled: Demonstrated offensive trap engineering, stabilised alchemy, and bilateral double-sales.',
+          'Solo Offline Commission Fulfilled in Blackspire: Demonstrated custom offensive trap engineering, stabilised alchemy, and bilateral double-sales.',
         isAuthentic: true
       };
       const nextRegions: RegionId[] = prev.unlockedRegions.includes('vault')
@@ -576,10 +745,15 @@ export default function App() {
     );
   }, []);
 
-  // Verify & Record Offline Peer Paradox Catalyst Code
+  // F03 Fix: Verify & Record Offline Peer Paradox Catalyst Code (Enforces Blackspire Hard-mode access & cryptographic hash)
   const handleImportPeerCatalyst = useCallback(
     (code: string): { valid: boolean; message: string } => {
-      const check = verifyAndParseCatalystCode(code, gameState.day, gameState.catalystLedger);
+      const check = verifyAndParseCatalystCode(
+        code,
+        gameState.day,
+        gameState.catalystLedger,
+        gameState.unlockedRegions
+      );
       if (!check.valid || !check.entry) {
         return { valid: false, message: check.error || 'Invalid Catalyst Code.' };
       }
@@ -601,7 +775,7 @@ export default function App() {
         message: `Verified Peer Catalyst from ${check.entry.senderName} (#${check.entry.provenanceHash}). The Paradox Vault is unlocked!`
       };
     },
-    [gameState.day, gameState.catalystLedger]
+    [gameState.day, gameState.catalystLedger, gameState.unlockedRegions]
   );
 
   // Basilisk Supply Chain Story Branch Decisions
@@ -645,7 +819,7 @@ export default function App() {
           basiliskChainStage: Math.min(3, prev.basiliskChainStage + 1),
           intelFeed: [
             {
-              id: `intel_basilisk_${Date.now()}`,
+              id: `intel_basilisk_d${prev.day}_${choice}`,
               day: prev.day,
               timestamp: '12:30 PM',
               region: 'warrens',
@@ -670,29 +844,38 @@ export default function App() {
     [gameState.expeditionReports]
   );
 
-  // Preview report if no expedition has been run yet so the 60fps canvas is always alive and interactive
+  // F01 Fix: Preview report uses the exact scheduled encounter if no expedition has been resolved on this day yet
   const activeCanvasReport = useMemo(() => {
-    if (latestReport) return latestReport;
-    const regionMasters = gameState.masters.filter((m) => m.region === gameState.activeRegion);
-    const regionParties = gameState.parties.filter((p) => p.region === gameState.activeRegion);
+    if (latestReport && latestReport.day === gameState.day - 1 && gameState.phase === 'EVENING') {
+      return latestReport;
+    }
     return simulateRegionExpedition(
       gameState.day,
       gameState.seed,
-      regionMasters[0] || gameState.masters[0],
-      regionParties[0] || gameState.parties[0],
+      activeRegionSchedule.currentMaster,
+      activeRegionSchedule.currentParty,
       gameState.products,
       gameState.contractsToday
     );
   }, [
     latestReport,
-    gameState.masters,
-    gameState.parties,
-    gameState.activeRegion,
     gameState.day,
+    gameState.phase,
     gameState.seed,
+    activeRegionSchedule.currentMaster,
+    activeRegionSchedule.currentParty,
     gameState.products,
     gameState.contractsToday
   ]);
+
+  const masterSalesCount = useMemo(
+    () => gameState.contractHistory.filter((c) => c.buyerType === 'MASTER').length,
+    [gameState.contractHistory]
+  );
+  const heroSalesCount = useMemo(
+    () => gameState.contractHistory.filter((c) => c.buyerType === 'HERO').length,
+    [gameState.contractHistory]
+  );
 
   const fontScaleClass =
     a11y.fontScale === 'xlarge'
@@ -703,19 +886,22 @@ export default function App() {
 
   if (shellState === 'TITLE_MENU') {
     return (
-      <TitleScreen
-        hasSavedGame={gameState.day > 1 || gameState.contractHistory.length > 0}
-        savedDay={gameState.day}
-        savedGold={gameState.gold}
-        reducedMotion={a11y.reducedMotion}
-        onStartNewOrContinue={() => setShellState('PLAYING')}
-        onLoadBasiliskScenario={handleLoadBasiliskScenario}
-        onResetSave={() => {
-          const fresh = createInitialSaveState();
-          setGameState(fresh);
-          persistAtomicSave(fresh);
-        }}
-      />
+      <>
+        <OfflineIndicator />
+        <TitleScreen
+          hasSavedGame={gameState.day > 1 || gameState.contractHistory.length > 0}
+          savedDay={gameState.day}
+          savedGold={gameState.gold}
+          reducedMotion={a11y.reducedMotion}
+          onStartNewOrContinue={() => setShellState('PLAYING')}
+          onLoadBasiliskScenario={handleLoadBasiliskScenario}
+          onResetSave={() => {
+            const fresh = createInitialSaveState();
+            setGameState(fresh);
+            persistAtomicSave(fresh);
+          }}
+        />
+      </>
     );
   }
 
@@ -723,8 +909,10 @@ export default function App() {
     <div
       className={`w-screen h-screen overflow-hidden bg-[#0B0E14] text-[#F1F5F9] flex flex-col select-none ${fontScaleClass}`}
     >
+      <OfflineIndicator />
+
       {/* Top Bar Contract: Zone 1 Brand Wordmark — Zone 2 Concise Nav Links — Zone 3 Primary Action */}
-      <header className="flex items-center justify-between gap-8 px-5 py-3 bg-[#0B0E14] border-b border-slate-800/90 shrink-0">
+      <header className="flex items-center justify-between gap-4 px-4 sm:px-5 py-2.5 bg-[#0B0E14] border-b border-slate-800/90 shrink-0">
         <button
           onClick={() => setShellState('TITLE_MENU')}
           className="font-display text-base sm:text-lg font-bold tracking-tight text-amber-400 hover:text-amber-300 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
@@ -732,36 +920,29 @@ export default function App() {
           Trap &amp; Tonic
         </button>
 
-        <nav className="hidden md:flex items-center gap-6 text-xs font-medium text-slate-300">
-          {[
-            { id: 'DAY_DESK' as const, label: 'Bilateral Desk' },
-            { id: 'ALCHEMY_LAB' as const, label: 'Alchemy Lab' },
-            { id: 'TRAP_WORKSHOP' as const, label: 'Trap Workshop' },
-            { id: 'EXPEDITION_MAP' as const, label: 'Expedition Arena' },
-            { id: 'INTEL_RUMOURS' as const, label: 'Intel & Story' },
-            { id: 'FINANCIALS' as const, label: 'Charters & Ledger' },
-            { id: 'CLIENT_LEDGER' as const, label: 'Clients' },
-            { id: 'SPECIALISATIONS' as const, label: 'Skills' },
-            { id: 'ARCHIVES_CATALYST' as const, label: 'Catalyst & Saves' }
-          ].map((item) => (
-            <button
-              key={item.id}
-              onClick={() => setActiveTab(item.id)}
-              className={`py-1 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                activeTab === item.id
-                  ? 'text-amber-400 underline underline-offset-8 decoration-2 font-semibold'
-                  : 'text-slate-400 hover:text-slate-100'
-              }`}
-            >
-              {item.label}
-            </button>
-          ))}
-        </nav>
+        {!a11y.oneThumbPortraitMode && (
+          <nav className="hidden lg:flex items-center gap-5 text-xs font-medium text-slate-300">
+            {WORKSPACE_NAV_ITEMS.map((item) => (
+              <button
+                key={item.id}
+                onClick={() => setActiveTab(item.id)}
+                className={`py-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                  activeTab === item.id
+                    ? 'text-amber-400 underline underline-offset-8 decoration-2 font-semibold'
+                    : 'text-slate-400 hover:text-slate-100'
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </nav>
+        )}
 
-        <div className="flex items-center gap-3 shrink-0">
+        <div className="flex items-center gap-2 shrink-0">
+          <PWAInstallButton />
           <button
             onClick={() => setShellState('PAUSED')}
-            className="px-3.5 py-1.5 text-xs font-mono font-semibold text-slate-950 bg-amber-500 hover:bg-amber-400 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            className="min-h-[40px] px-3.5 py-1.5 text-xs font-mono font-semibold text-slate-950 bg-amber-500 hover:bg-amber-400 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
           >
             Options &amp; A11y (Esc)
           </button>
@@ -770,11 +951,11 @@ export default function App() {
 
       {/* Main Scrollable Game Shell Container (Supports One-Thumb Portrait Mode or Full 1440px Desktop) */}
       <main
-        className={`flex-1 overflow-y-auto px-4 sm:px-6 py-4 space-y-5 ${
-          a11y.oneThumbPortraitMode ? 'max-w-md mx-auto w-full border-x border-slate-800' : 'max-w-[1440px] mx-auto w-full'
+        className={`flex-1 overflow-y-auto px-4 sm:px-6 pt-4 pb-24 lg:pb-6 space-y-5 ${
+          a11y.oneThumbPortraitMode ? 'max-w-md mx-auto w-full border-x border-slate-800 pb-28' : 'max-w-[1440px] mx-auto w-full'
         }`}
       >
-        {/* Perimeter Telemetry Strip & Active Dungeon Region Selector (Clean unboxed metadata + segmented realm switcher) */}
+        {/* Perimeter Telemetry Strip & Active Dungeon Region Selector */}
         <div className="flex flex-wrap items-center justify-between gap-4 pb-3 border-b border-slate-800/80">
           <div className="flex flex-wrap items-center gap-2 text-xs font-mono tabular-nums text-slate-300">
             <span className="text-amber-400 font-semibold">DAY {gameState.day} / 120+</span>
@@ -797,7 +978,7 @@ export default function App() {
           </div>
 
           {/* Connected Realm Switcher */}
-          <div className="flex items-center gap-1 p-1 bg-[#131822] border border-slate-800 rounded-lg">
+          <div className="flex flex-wrap items-center gap-1 p-1 bg-[#131822] border border-slate-800 rounded-lg">
             {REGIONS_DATA.map((reg) => {
               const unlocked = gameState.unlockedRegions.includes(reg.id);
               const isSelected = gameState.activeRegion === reg.id;
@@ -811,7 +992,7 @@ export default function App() {
                       setActiveTab(reg.requiresCatalyst ? 'ARCHIVES_CATALYST' : 'FINANCIALS');
                     }
                   }}
-                  className={`px-2.5 py-1 text-xs font-mono rounded transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                  className={`min-h-[36px] px-2.5 py-1 text-xs font-mono rounded transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
                     isSelected
                       ? 'bg-amber-600 text-slate-950 font-semibold'
                       : unlocked
@@ -827,39 +1008,20 @@ export default function App() {
           </div>
         </div>
 
-        {/* Mobile / Compact Tab Switcher */}
-        <div className="flex md:hidden overflow-x-auto gap-1.5 pb-1">
-          {[
-            { id: 'DAY_DESK' as const, label: 'Trade' },
-            { id: 'ALCHEMY_LAB' as const, label: 'Alchemy' },
-            { id: 'TRAP_WORKSHOP' as const, label: 'Traps' },
-            { id: 'EXPEDITION_MAP' as const, label: 'Arena' },
-            { id: 'INTEL_RUMOURS' as const, label: 'Intel' },
-            { id: 'FINANCIALS' as const, label: 'Charters' },
-            { id: 'CLIENT_LEDGER' as const, label: 'Clients' },
-            { id: 'ARCHIVES_CATALYST' as const, label: 'Catalyst' }
-          ].map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setActiveTab(t.id)}
-              className={`px-3 py-1.5 text-xs font-mono rounded whitespace-nowrap shrink-0 ${
-                activeTab === t.id ? 'bg-amber-600 text-slate-950 font-semibold' : 'bg-slate-900 text-slate-400'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Live Action Consequence Banner */}
+        {/* Live Action Consequence Banner with Explicit Scheduled Matchup */}
         <div className="px-4 py-2.5 bg-[#131822] border border-slate-800 rounded-lg flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
-          <span className="text-slate-200">{statusBanner}</span>
+          <div className="space-y-0.5">
+            <div className="text-slate-200">{statusBanner}</div>
+            <div className="text-amber-400/90">
+              Scheduled Matchup: {activeRegionSchedule.currentParty.name} vs {activeRegionSchedule.currentMaster.name} · Next: {activeRegionSchedule.nextParty.name} vs {activeRegionSchedule.nextMaster.name}
+            </div>
+          </div>
           <div className="flex items-center gap-3">
             <button
               onClick={handleLaunchExpedition}
-              className="px-3 py-1 bg-amber-600 hover:bg-amber-500 text-slate-950 font-semibold rounded cursor-pointer whitespace-nowrap shrink-0"
+              className="min-h-[40px] px-3.5 py-1.5 bg-amber-600 hover:bg-amber-500 text-slate-950 font-semibold rounded-lg cursor-pointer whitespace-nowrap shrink-0"
             >
-              Run Today’s Expedition →
+              Run Scheduled Expedition ({activeRegionSchedule.currentParty.name} vs {activeRegionSchedule.currentMaster.name}) →
             </button>
           </div>
         </div>
@@ -906,7 +1068,7 @@ export default function App() {
                       <button
                         key={rm.roomIndex}
                         onClick={() => setActiveRoomIdx(idx)}
-                        className={`px-3 py-1 text-xs font-mono rounded cursor-pointer whitespace-nowrap shrink-0 ${
+                        className={`min-h-[38px] px-3 py-1 text-xs font-mono rounded cursor-pointer whitespace-nowrap shrink-0 ${
                           activeRoomIdx === idx
                             ? 'bg-amber-500 text-slate-950 font-semibold'
                             : 'bg-[#0B0E14] text-slate-300 border border-slate-700'
@@ -972,9 +1134,14 @@ export default function App() {
             products={gameState.products}
             masters={gameState.masters}
             parties={gameState.parties}
+            scheduledMasterId={activeRegionSchedule.currentMaster.id}
+            scheduledPartyId={activeRegionSchedule.currentParty.id}
+            nextMasterName={activeRegionSchedule.nextMaster.name}
+            nextPartyName={activeRegionSchedule.nextParty.name}
             contractsToday={gameState.contractsToday}
             bilateralSkillUnlocked={isSkillUnlocked('bilateral_margin')}
             secretShippingUnlocked={isSkillUnlocked('secret_shipping')}
+            onSelectScheduledMatchup={handleSelectScheduledMatchup}
             onExecuteSale={handleExecuteSale}
             onLaunchExpedition={handleLaunchExpedition}
           />
@@ -1067,21 +1234,24 @@ export default function App() {
           <ArchivesAndCatalystPanel
             day={gameState.day}
             seed={gameState.seed}
+            blackspireUnlocked={gameState.unlockedRegions.includes('blackspire')}
             expertUnlocked={gameState.expertUnlocked}
             catalystLedger={gameState.catalystLedger}
             expeditionReports={gameState.expeditionReports}
-            customBrewsCount={customBrewsCount}
-            customTrapsCount={customTrapsCount}
-            bilateralSalesCount={gameState.contractHistory.length}
+            customBrewsCount={gameState.customBrewsCount}
+            customTrapsCount={gameState.customTrapsCount}
+            masterSalesCount={masterSalesCount}
+            heroSalesCount={heroSalesCount}
             onClaimSoloDmCatalyst={handleClaimSoloDmCatalyst}
             onImportPeerCatalyst={handleImportPeerCatalyst}
             onExportSaveJson={() => JSON.stringify(gameState)}
             onImportSaveJson={(jsonStr) => {
               try {
-                const parsed = JSON.parse(jsonStr) as GameSaveState;
+                const parsed = JSON.parse(jsonStr) as Partial<GameSaveState>;
                 if (parsed && typeof parsed.day === 'number' && Array.isArray(parsed.products)) {
-                  setGameState(parsed);
-                  persistAtomicSave(parsed);
+                  const hydrated = normalizeLoadedSave(parsed);
+                  setGameState(hydrated);
+                  persistAtomicSave(hydrated);
                   return true;
                 }
               } catch {
@@ -1092,6 +1262,28 @@ export default function App() {
           />
         )}
       </main>
+
+      {/* F06/F07 Fix: Ergonomic Bottom Thumb Navigation Bar for Mobile (<1024px) & One-Thumb Portrait Mode (Includes ALL 9 Tabs including Skills!) */}
+      <nav
+        aria-label="Mobile and One-Thumb Workspace Navigation"
+        className={`${
+          a11y.oneThumbPortraitMode ? 'flex' : 'flex lg:hidden'
+        } fixed bottom-0 inset-x-0 z-40 bg-[#0B0E14]/95 border-t border-slate-800 px-2 py-1.5 overflow-x-auto items-center justify-start sm:justify-center gap-1`}
+      >
+        {WORKSPACE_NAV_ITEMS.map((item) => (
+          <button
+            key={item.id}
+            onClick={() => setActiveTab(item.id)}
+            className={`min-h-[44px] min-w-[64px] px-2.5 py-1.5 text-xs font-mono rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer flex flex-col items-center justify-center ${
+              activeTab === item.id
+                ? 'bg-amber-600 text-slate-950 font-bold'
+                : 'bg-[#131822] text-slate-300 hover:text-white border border-slate-800'
+            }`}
+          >
+            <span>{item.shortLabel}</span>
+          </button>
+        ))}
+      </nav>
 
       {/* Pause & Accessibility Modal */}
       {shellState === 'PAUSED' && (
@@ -1121,7 +1313,7 @@ export default function App() {
                     <button
                       key={sz}
                       onClick={() => setA11y((prev) => ({ ...prev, fontScale: sz }))}
-                      className={`px-2.5 py-1 rounded cursor-pointer ${
+                      className={`min-h-[36px] px-2.5 py-1 rounded cursor-pointer ${
                         a11y.fontScale === sz ? 'bg-amber-600 text-slate-950 font-semibold' : 'bg-slate-800 text-slate-300'
                       }`}
                     >
@@ -1138,7 +1330,7 @@ export default function App() {
                     <button
                       key={spd}
                       onClick={() => setA11y((prev) => ({ ...prev, simSpeed: spd }))}
-                      className={`px-2.5 py-1 rounded cursor-pointer ${
+                      className={`min-h-[36px] px-2.5 py-1 rounded cursor-pointer ${
                         a11y.simSpeed === spd ? 'bg-amber-600 text-slate-950 font-semibold' : 'bg-slate-800 text-slate-300'
                       }`}
                     >
@@ -1149,7 +1341,7 @@ export default function App() {
               </div>
 
               <label className="flex items-center justify-between p-3 bg-[#0B0E14] border border-slate-800 rounded-lg cursor-pointer">
-                <span>One-Thumb Portrait Layout Container</span>
+                <span>One-Thumb Portrait Layout &amp; Bottom Dock</span>
                 <input
                   type="checkbox"
                   checked={a11y.oneThumbPortraitMode}
@@ -1182,13 +1374,13 @@ export default function App() {
             <div className="flex items-center justify-between gap-3 pt-3 border-t border-slate-800">
               <button
                 onClick={() => setShellState('TITLE_MENU')}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-mono rounded-lg cursor-pointer"
+                className="min-h-[42px] px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-mono rounded-lg cursor-pointer"
               >
                 Return to Title Screen
               </button>
               <button
                 onClick={() => setShellState('PLAYING')}
-                className="px-5 py-2 bg-amber-600 hover:bg-amber-500 text-slate-950 font-semibold text-xs font-mono rounded-lg cursor-pointer"
+                className="min-h-[42px] px-5 py-2 bg-amber-600 hover:bg-amber-500 text-slate-950 font-semibold text-xs font-mono rounded-lg cursor-pointer"
               >
                 Resume Campaign
               </button>

@@ -236,14 +236,19 @@ export const AlchemyLabPanel: React.FC<AlchemyLabProps> = ({
               02. Stoichiometric Reaction Assay
             </h3>
             <span className="text-xs font-mono text-amber-400">
-              Target: {previewProduct.targetAudience}
+              Target: {previewProduct.targetAudience} · #{previewProduct.formulaSignature}
             </span>
           </div>
 
           <div className="mb-4">
-            <div className="text-base font-semibold text-slate-100 mb-1">{previewProduct.name}</div>
+            <div className="text-base font-semibold text-slate-100 mb-1">
+              {previewProduct.name}{' '}
+              <span className="text-xs font-mono text-emerald-400">
+                [Formula #{previewProduct.formulaSignature}]
+              </span>
+            </div>
             <div className="text-xs font-mono text-slate-400 tabular-nums">
-              Unit Cost: {previewProduct.productionCost}g · Suggested Retail: {previewProduct.suggestedPrice}g
+              Canonical ID: {previewProduct.id} · Unit Cost: {previewProduct.productionCost}g · Suggested Retail: {previewProduct.suggestedPrice}g
             </div>
           </div>
 
@@ -545,13 +550,20 @@ export const TrapWorkshopPanel: React.FC<TrapWorkshopProps> = ({
             <h3 className="font-display text-base font-bold text-slate-100">
               02. Prototype Mass &amp; Counterplay Test Rig
             </h3>
-            <span className="text-xs font-mono text-rose-400">For Dungeon Masters</span>
+            <span className="text-xs font-mono text-rose-400">
+              For Dungeon Masters · #{previewTrap.formulaSignature}
+            </span>
           </div>
 
           <div className="mb-4">
-            <div className="text-base font-semibold text-slate-100">{previewTrap.name}</div>
+            <div className="text-base font-semibold text-slate-100">
+              {previewTrap.name}{' '}
+              <span className="text-xs font-mono text-amber-400">
+                [Build #{previewTrap.formulaSignature}]
+              </span>
+            </div>
             <div className="text-xs font-mono text-slate-400 tabular-nums">
-              Assembly Cost: {previewTrap.productionCost}g · Suggested Contract Price: {previewTrap.suggestedPrice}g
+              Canonical ID: {previewTrap.id} · Assembly Cost: {previewTrap.productionCost}g · Suggested Contract Price: {previewTrap.suggestedPrice}g
             </div>
           </div>
 

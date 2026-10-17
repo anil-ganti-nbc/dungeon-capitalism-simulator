@@ -8,9 +8,106 @@ import {
   ExpeditionRoomEvent,
   CounterClass,
   SaleContract,
-  ParadoxCatalystEntry
+  ParadoxCatalystEntry,
+  RegionId,
+  ScheduledMatchup
 } from '../types/game';
 import { DeterministicRNG, hashString } from '../utils/prng';
+
+export const SIM_RULES_VERSION = 'v2.0-sim002';
+
+export function computeCanonicalFormulaSignature(
+  kind: 'alc' | 'trp',
+  componentIds: string[],
+  appliedSkills: string[] = [],
+  rulesVersion: string = SIM_RULES_VERSION
+): string {
+  const sortedSkills = [...appliedSkills].sort().join(',');
+  const payload = `${kind}|${componentIds.join(',')}|${sortedSkills}|${rulesVersion}`;
+  return hashString(payload).slice(0, 8).toUpperCase();
+}
+
+export function computeCanonicalProductId(
+  kind: 'alc' | 'trp',
+  componentIds: string[],
+  appliedSkills: string[] = [],
+  rulesVersion: string = SIM_RULES_VERSION
+): string {
+  const sig = computeCanonicalFormulaSignature(kind, componentIds, appliedSkills, rulesVersion);
+  return `prod_${kind}_${sig.toLowerCase()}`;
+}
+
+/**
+ * F02 Fix: Merges a newly crafted product into inventory strictly by canonical formulation identity
+ * (complete component tuple + applicable skills + rulesVersion), NEVER by display name alone.
+ * Distinct formulations retain distinct properties and IDs even when given identical names.
+ */
+export function mergeCraftedProductIntoInventory(
+  existingProducts: CraftedProduct[],
+  crafted: CraftedProduct,
+  batchSize: number
+): CraftedProduct[] {
+  const craftedCompKey = crafted.recipeComponents.join(',');
+  const craftedSkillsKey = [...(crafted.appliedSkills || [])].sort().join(',');
+  const craftedRules = crafted.rulesVersion || SIM_RULES_VERSION;
+
+  const existingIdx = existingProducts.findIndex((p) => {
+    if (p.id === crafted.id) return true;
+    const pCompKey = p.recipeComponents.join(',');
+    const pSkillsKey = [...(p.appliedSkills || [])].sort().join(',');
+    const pRules = p.rulesVersion || SIM_RULES_VERSION;
+    return pCompKey === craftedCompKey && pSkillsKey === craftedSkillsKey && pRules === craftedRules && p.name === crafted.name;
+  });
+
+  if (existingIdx >= 0) {
+    const next = [...existingProducts];
+    next[existingIdx] = {
+      ...crafted,
+      id: next[existingIdx].id, // Preserve existing canonical/initial ID if exact same formula & name
+      stock: next[existingIdx].stock + batchSize
+    };
+    return next;
+  }
+
+  return [{ ...crafted, stock: batchSize }, ...existingProducts];
+}
+
+/**
+ * F01 Fix: Returns the explicitly scheduled Dungeon Master and Adventuring Party for a region,
+ * plus the next rotation pairing so the player always knows who is participating before and after supplying.
+ */
+export function getRegionEncounterSchedule(
+  region: RegionId,
+  day: number,
+  masters: DungeonMaster[],
+  parties: AdventuringParty[],
+  scheduledMatchups?: Record<RegionId, ScheduledMatchup>
+): {
+  currentMaster: DungeonMaster;
+  currentParty: AdventuringParty;
+  nextMaster: DungeonMaster;
+  nextParty: AdventuringParty;
+} {
+  const regionMasters = masters.filter((m) => m.region === region);
+  const regionParties = parties.filter((p) => p.region === region);
+
+  const fallbackMaster = regionMasters[(day - 1) % Math.max(1, regionMasters.length)] || masters[0];
+  const fallbackParty = regionParties[(day - 1) % Math.max(1, regionParties.length)] || parties[0];
+
+  const scheduled = scheduledMatchups?.[region];
+  const currentMaster =
+    (scheduled && regionMasters.find((m) => m.id === scheduled.masterId)) || fallbackMaster;
+  const currentParty =
+    (scheduled && regionParties.find((p) => p.id === scheduled.partyId)) || fallbackParty;
+
+  const currentMasterIdx = Math.max(0, regionMasters.findIndex((m) => m.id === currentMaster.id));
+  const currentPartyIdx = Math.max(0, regionParties.findIndex((p) => p.id === currentParty.id));
+
+  const nextMaster = regionMasters[(currentMasterIdx + 1) % Math.max(1, regionMasters.length)] || currentMaster;
+  const nextParty = regionParties[(currentPartyIdx + 1) % Math.max(1, regionParties.length)] || currentParty;
+
+  return { currentMaster, currentParty, nextMaster, nextParty };
+}
 
 export function synthesizeAlchemyProduct(
   reagents: [Reagent, Reagent, Reagent, Reagent, Reagent],
@@ -19,6 +116,8 @@ export function synthesizeAlchemyProduct(
 ): CraftedProduct {
   const [base, active, carrier, stabiliser, catalyst] = reagents;
   const all = [base, active, carrier, stabiliser, catalyst];
+  const componentIds = all.map((r) => r.id);
+  const appliedSkills = chelateSkillUnlocked ? ['chelate_boost'] : [];
 
   const totalCost = Math.round(all.reduce((acc, r) => acc + r.baseCost, 0) * 0.85);
   const rawPotency = all.reduce((acc, r) => acc + r.traits.potency, 0);
@@ -35,10 +134,14 @@ export function synthesizeAlchemyProduct(
   const reliability = Math.max(20, Math.min(99, Math.round((potency + stability) / 2)));
 
   const tags = new Set(all.flatMap((r) => r.tags));
-  const curesPetrification = tags.has('antipetrify') || active.id === 'reg_act_01';
+  const curesPetrification =
+    tags.has('antipetrify') || active.id === 'reg_act_01' || (rawPotency >= 150 && rawAntiMagic >= 60);
   const causesPetrification = tags.has('petrify_hazard') || active.id === 'reg_act_07';
   const emitsSulphurFog = tags.has('fog_generator') || (tags.has('sulphur') && tags.has('aerosol'));
-  const filtersSulphur = tags.has('sulphur_filter') || (tags.has('sulphur_shield') && stability >= 70);
+  const filtersSulphur =
+    tags.has('sulphur_filter') ||
+    (tags.has('sulphur_shield') && stability >= 70) ||
+    (stability >= 82 && netSulphurSens <= 0);
   const isTrapSolvent = tags.has('trap_solvent') || rawAcidity >= 75;
 
   const sulphurVulnerable = netSulphurSens > 25 && !filtersSulphur;
@@ -87,17 +190,22 @@ export function synthesizeAlchemyProduct(
     reactionNotes.push(`Balanced alchemical brew (Potency ${potency}, Stability ${stability}).`);
   }
 
+  const formulaSignature = computeCanonicalFormulaSignature('alc', componentIds, appliedSkills, SIM_RULES_VERSION);
+  const canonicalId = computeCanonicalProductId('alc', componentIds, appliedSkills, SIM_RULES_VERSION);
+
   const defaultName =
     customName.trim() ||
     `${stabiliser.name.split(' ')[0]} ${active.name.split(' ').slice(-2).join(' ')} ${carrier.name.split(' ').pop()}`;
 
   return {
-    id: `prod_custom_alc_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+    id: canonicalId,
+    formulaSignature,
+    rulesVersion: SIM_RULES_VERSION,
     name: defaultName,
     category,
     targetAudience,
     productionCost: totalCost,
-    suggestedPrice: Math.round(totalCost * 1.95),
+    suggestedPrice: Math.round(totalCost * 2.05),
     stock: 2,
     potency,
     stability,
@@ -112,8 +220,9 @@ export function synthesizeAlchemyProduct(
     detectionDC: 0,
     damageType: emitsSulphurFog ? 'sulphur_fog' : causesPetrification ? 'petrification' : isTrapSolvent ? 'acid' : 'none',
     counterClasses: counterClasses.length > 0 ? counterClasses : ['resistance'],
-    recipeComponents: all.map((r) => r.id),
-    description: `Synthesized from ${base.name}, ${active.name}, and ${stabiliser.name}.`,
+    recipeComponents: componentIds,
+    appliedSkills,
+    description: `Synthesized from ${base.name}, ${active.name}, ${carrier.name}, ${stabiliser.name}, and ${catalyst.name} [Formula #${formulaSignature}].`,
     reactionNotes
   };
 }
@@ -125,6 +234,8 @@ export function assembleTrapProduct(
 ): CraftedProduct {
   const [trigger, concealment, delivery, payload, power, reset] = parts;
   const all = [trigger, concealment, delivery, payload, power, reset];
+  const componentIds = all.map((p) => p.id);
+  const appliedSkills = zincGuardUnlocked ? ['zinc_guard'] : [];
 
   const totalCost = Math.round(all.reduce((acc, p) => acc + p.baseCost, 0) * 0.85);
   const rawLethality = all.reduce((acc, p) => acc + p.lethality, 0);
@@ -169,17 +280,22 @@ export function assembleTrapProduct(
     reactionNotes.push('ANODISED ZINC SHIELD: Immune to Rust-Monster Solvent sabotage.');
   }
 
+  const formulaSignature = computeCanonicalFormulaSignature('trp', componentIds, appliedSkills, SIM_RULES_VERSION);
+  const canonicalId = computeCanonicalProductId('trp', componentIds, appliedSkills, SIM_RULES_VERSION);
+
   const defaultName =
     customName.trim() ||
     `${trigger.name.split(' ')[0]} ${payload.name.split(' ').slice(0, 2).join(' ')} ${delivery.name.split(' ').pop()}`;
 
   return {
-    id: `prod_custom_trp_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+    id: canonicalId,
+    formulaSignature,
+    rulesVersion: SIM_RULES_VERSION,
     name: defaultName,
     category: causesPetrification ? 'HAZARD_MONSTER' : 'TRAP_MASTER',
     targetAudience: 'MASTER',
     productionCost: totalCost,
-    suggestedPrice: Math.round(totalCost * 1.95),
+    suggestedPrice: Math.round(totalCost * 2.05),
     stock: 2,
     potency,
     stability,
@@ -194,8 +310,9 @@ export function assembleTrapProduct(
     detectionDC: avgDetection,
     damageType: payload.damageType,
     counterClasses: Array.from(counterSet),
-    recipeComponents: all.map((p) => p.id),
-    description: `Engineered with ${trigger.name}, ${concealment.name}, and ${payload.name}.`,
+    recipeComponents: componentIds,
+    appliedSkills,
+    description: `Engineered with ${trigger.name}, ${concealment.name}, ${delivery.name}, and ${payload.name} [Build #${formulaSignature}].`,
     reactionNotes
   };
 }
@@ -210,13 +327,17 @@ export function simulateRegionExpedition(
 ): ExpeditionReport {
   const rng = new DeterministicRNG(seed + day * 7919);
 
-  // Gather active hazards for master and active gear for party
+  // Gather active hazards for master and active gear for party strictly by canonical ID
   const masterProducts = master.installedHazards
     .map((id) => productsCatalog.find((p) => p.id === id))
     .filter((p): p is CraftedProduct => Boolean(p));
 
   if (masterProducts.length === 0) {
-    masterProducts.push(productsCatalog[5]); // Fallback 45kg spike plate
+    const fallbackPlate =
+      productsCatalog.find((p) => p.id === 'prod_trap_plate_spikes') ||
+      productsCatalog.find((p) => p.targetAudience === 'MASTER') ||
+      productsCatalog[0];
+    if (fallbackPlate) masterProducts.push(fallbackPlate);
   }
 
   const partyProducts = party.equippedProducts
@@ -227,7 +348,8 @@ export function simulateRegionExpedition(
   const dungeonHasSulphurFog = masterProducts.some((p) => p.emitsSulphurFog);
   const partyHasSulphurFilter = partyProducts.some((p) => p.filtersSulphur);
   const morphPotion = partyProducts.find((p) => p.massEffectKg <= -25) || null;
-  const rustSolvent = partyProducts.find((p) => p.counterClasses.includes('sabotage') && p.category === 'DUAL_SOLVENT') || null;
+  const rustSolvent =
+    partyProducts.find((p) => p.counterClasses.includes('sabotage') && p.category === 'DUAL_SOLVENT') || null;
   const basiliskAntidote = partyProducts.find((p) => p.curesPetrification) || null;
 
   const roomNames = [
@@ -241,7 +363,14 @@ export function simulateRegionExpedition(
   let warrantyClaimsTriggered = 0;
   const doubleSaleDemandCreated: string[] = [];
 
-  const vanguard = party.members[0] || { name: 'Lead Delver', massKg: 85, hp: 100, maxHp: 100, role: 'Vanguard', status: 'Healthy' };
+  const vanguard = party.members[0] || {
+    name: 'Lead Delver',
+    massKg: 85,
+    hp: 100,
+    maxHp: 100,
+    role: 'Vanguard',
+    status: 'Healthy'
+  };
 
   for (let i = 0; i < 3; i++) {
     const hazard = masterProducts[i % masterProducts.length];
@@ -349,6 +478,7 @@ export function simulateRegionExpedition(
     }
     // 5. Standard Trap Resolution
     else {
+      const heroHasResistance = partyProducts.some((p) => p.counterClasses.includes('resistance') && p.potency >= 60);
       const scoutRoll = rng.nextInt(25, 75) + Math.round(party.caution * 0.25);
       if (scoutRoll >= hazard.detectionDC) {
         outcome = 'COUNTER_SUCCEEDED';
@@ -359,6 +489,17 @@ export function simulateRegionExpedition(
         learnedByHeroes = `Mapped the trigger layout of ${hazard.name}.`;
         learnedByMaster = `${master.name} wants higher Concealment DC modules so scouts stop spotting traps.`;
         doubleSaleDemandCreated.push(`${master.name} demands higher Concealment DC upgrades`);
+      } else if (heroHasResistance && hazard.potency <= 78) {
+        const resistPotion = partyProducts.find((p) => p.counterClasses.includes('resistance'))!;
+        outcome = 'COUNTER_SUCCEEDED';
+        heroCounterUsed = resistPotion.name;
+        chemicalReaction = `Protective Ward: ${resistPotion.name} (Potency ${resistPotion.potency}) absorbed the brunt of ${hazard.name}.`;
+        damageDealt = rng.nextInt(10, 22);
+        lootSecured = rng.nextInt(155, 255);
+        causalExplanation = `${hazard.name} triggered, but ${party.name}'s ${resistPotion.name} mitigated the ${hazard.damageType} payload.`;
+        learnedByHeroes = `${resistPotion.name} cushioned ${hazard.name}'s impact.`;
+        learnedByMaster = `${master.name} wants higher-potency payloads to overwhelm hero tonics.`;
+        doubleSaleDemandCreated.push(`${master.name} seeks higher-lethality payloads`);
       } else {
         outcome = 'TRAP_TRIGGERED';
         damageDealt = Math.round(hazard.potency * 0.55) + rng.nextInt(8, 22);
@@ -395,12 +536,20 @@ export function simulateRegionExpedition(
   }
 
   // Check if player breached an exclusivity contract today (sold to both Master and Hero in same region when one had Exclusive Deal)
+  // Wax-Removed Maker Marks (secretProvenance) reduces double-dealing discovery chance by 50%
   const masterSalesToday = contractsToday.filter((c) => c.buyerId === master.id);
   const heroSalesToday = contractsToday.filter((c) => c.buyerId === party.id);
-  const exclusivityBreachDetected =
+  const hasExclusiveDoubleSale =
     masterSalesToday.length > 0 &&
     heroSalesToday.length > 0 &&
-    [...masterSalesToday, ...heroSalesToday].some((c) => c.exclusiveDeal && !c.secretProvenance);
+    [...masterSalesToday, ...heroSalesToday].some((c) => c.exclusiveDeal);
+  const allMaskedWithNullWax =
+    hasExclusiveDoubleSale &&
+    [...masterSalesToday, ...heroSalesToday]
+      .filter((c) => c.exclusiveDeal)
+      .every((c) => c.secretProvenance);
+  const exclusivityBreachDetected =
+    hasExclusiveDoubleSale && (!allMaskedWithNullWax || rng.next() < 0.5);
 
   const totalDamage = rooms.reduce((acc, r) => acc + r.damageDealt, 0);
   const masterTreasuryDelta = Math.round(totalDamage * 4.5 - totalLooted * 0.45 + 180);
@@ -419,7 +568,7 @@ export function simulateRegionExpedition(
     id: `exp_day${day}_${master.id}_${party.id}`,
     day,
     seed,
-    rulesVersion: 'v1.0-deterministic',
+    rulesVersion: SIM_RULES_VERSION,
     region: master.region,
     masterId: master.id,
     masterName: master.name,
@@ -427,6 +576,8 @@ export function simulateRegionExpedition(
     partyName: party.name,
     masterSupplies: masterProducts.map((p) => p.name),
     heroSupplies: partyProducts.map((p) => p.name),
+    masterSupplyIds: masterProducts.map((p) => p.id),
+    heroSupplyIds: partyProducts.map((p) => p.id),
     rooms,
     totalLooted,
     masterTreasuryDelta,
@@ -440,17 +591,28 @@ export function simulateRegionExpedition(
 
 export function generatePeerCatalystCode(senderName: string, day: number): string {
   const clean = senderName.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 8) || 'MERCHANT';
-  const sig = hashString(`PARADOX_CATALYST_${clean}_${day}`).slice(0, 8);
+  const sig = hashString(`PARADOX_CATALYST_${clean}_${day}`).slice(0, 8).toUpperCase();
   return `CATALYST-${clean}-D${day}-${sig}`;
 }
 
+/**
+ * F03 Fix: Enforces Hard-mode access ('blackspire' unlocked), cryptographic provenance hash verification,
+ * and local replay protection before allowing a Peer Catalyst code to unlock The Paradox Vault.
+ */
 export function verifyAndParseCatalystCode(
   code: string,
   currentDay: number,
-  existingLedger: ParadoxCatalystEntry[]
+  existingLedger: ParadoxCatalystEntry[],
+  unlockedRegions: RegionId[] = ['cellar', 'warrens', 'blackspire']
 ): { valid: boolean; error?: string; entry?: ParadoxCatalystEntry } {
+  if (!unlockedRegions.includes('blackspire')) {
+    return {
+      valid: false,
+      error: 'Hard Mode Prerequisite Not Met: You must unlock Blackspire Labyrinth (Region III) before a Paradox Catalyst can attune to The Paradox Vault.'
+    };
+  }
+
   const trimmed = code.trim().toUpperCase();
-  // Accept valid formatted peer codes or canonical test codes
   const match = /^CATALYST-([A-Z0-9]{3,12})-D(\d+)-([A-Z0-9]{6,12})$/.exec(trimmed);
   if (!match) {
     return {
@@ -458,17 +620,28 @@ export function verifyAndParseCatalystCode(
       error: 'Invalid Catalyst Manifest format. Expected CATALYST-<SENDER>-D<DAY>-<HASH>.'
     };
   }
+
   const [, sender, dayStr, hashPart] = match;
-  if (existingLedger.some((e) => e.provenanceHash === hashPart)) {
+  const expectedSig = hashString(`PARADOX_CATALYST_${sender}_${dayStr}`).slice(0, 8).toUpperCase();
+
+  if (hashPart !== expectedSig) {
+    return {
+      valid: false,
+      error: `Provenance Signature Mismatch: Hash #${hashPart} failed cryptographic verification for sender ${sender} (Day ${dayStr}).`
+    };
+  }
+
+  if (existingLedger.some((e) => e.provenanceHash.toUpperCase() === hashPart)) {
     return {
       valid: false,
       error: 'Local Replay Detection: This Catalyst provenance hash has already been recorded in your Gift Ledger.'
     };
   }
+
   return {
     valid: true,
     entry: {
-      id: `cat_peer_${Date.now()}`,
+      id: `cat_peer_d${currentDay}_${hashPart.toLowerCase()}`,
       senderName: `Guild Envoy ${sender}`,
       senderType: 'PEER_QR_EXCHANGE',
       provenanceHash: hashPart,

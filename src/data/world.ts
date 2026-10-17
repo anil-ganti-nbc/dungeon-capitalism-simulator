@@ -40,7 +40,7 @@ export const REGIONS_DATA: RegionInfo[] = [
     roman: 'II',
     name: 'The Gilded Warrens',
     difficulty: 'Normal',
-    charterCostGold: 5000,
+    charterCostGold: 4500,
     requiresCatalyst: false,
     tagline: 'Layered golden mines, smugglers’ entrances, moving walls, dwarven insurance adjusters and competing merchants.',
     mechanicsSummary: [
@@ -55,7 +55,7 @@ export const REGIONS_DATA: RegionInfo[] = [
     roman: 'III',
     name: 'Blackspire Labyrinth',
     difficulty: 'Hard',
-    charterCostGold: 35000,
+    charterCostGold: 14000,
     requiresCatalyst: false,
     tagline: 'A fortress of lucrative monsters, surveillance sorcery, industrialised dungeon defence and a kingdom terrified of its own insurance claims.',
     mechanicsSummary: [

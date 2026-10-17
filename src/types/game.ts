@@ -77,7 +77,9 @@ export interface TrapPart {
 export type ProductCategory = 'TONIC_HERO' | 'COUNTER_GEAR' | 'TRAP_MASTER' | 'HAZARD_MONSTER' | 'DUAL_SOLVENT';
 
 export interface CraftedProduct {
-  id: string;
+  id: string;                    // Canonical deterministic build ID based on composition + skills + rulesVersion
+  formulaSignature?: string;     // Short 8-char canonical hex signature of composition + skills + rules
+  rulesVersion?: string;         // e.g. 'v2.0-sim002'
   name: string;
   category: ProductCategory;
   targetAudience: 'HERO' | 'MASTER' | 'BOTH';
@@ -97,7 +99,8 @@ export interface CraftedProduct {
   detectionDC: number;
   damageType: string;
   counterClasses: CounterClass[];
-  recipeComponents: string[];    // IDs of reagents or trap parts
+  recipeComponents: string[];    // IDs of reagents or trap parts in slot order
+  appliedSkills?: string[];      // Applicable skill flags present at synthesis/assembly
   description: string;
   reactionNotes: string[];
 }
@@ -115,7 +118,7 @@ export interface DungeonMaster {
   visitorTraffic: number;    // 0-100 (too lethal = 0 traffic; too easy = looted treasury)
   trust: number;             // 0-100
   knownHeroCounters: string[];
-  installedHazards: string[]; // Product IDs
+  installedHazards: string[]; // Canonical Product IDs
   memoryLog: string[];
   desiredTrait: string;
   catalystCommissionStage: number; // 0 = not started, 1 = phase 1, 2 = phase 2, 3 = sent catalyst
@@ -142,7 +145,7 @@ export interface AdventuringParty {
   caution: number;           // 0-100
   members: HeroMember[];
   observedTraps: string[];   // Trap/Hazard IDs they have learned to counter
-  equippedProducts: string[];// Product IDs bought from player or rivals
+  equippedProducts: string[];// Canonical Product IDs bought from player or rivals
   memoryLog: string[];
   desiredCounter: string;
 }
@@ -222,6 +225,8 @@ export interface ExpeditionReport {
   partyName: string;
   masterSupplies: string[];
   heroSupplies: string[];
+  masterSupplyIds?: string[];
+  heroSupplyIds?: string[];
   rooms: ExpeditionRoomEvent[];
   totalLooted: number;
   masterTreasuryDelta: number;
@@ -278,6 +283,11 @@ export interface AccessibilitySettings {
   audioMuted: boolean;
 }
 
+export interface ScheduledMatchup {
+  masterId: string;
+  partyId: string;
+}
+
 export interface GameSaveState {
   version: string;
   seed: number;
@@ -288,6 +298,9 @@ export interface GameSaveState {
   gold: number;
   debt: number;
   skillPoints: number;
+  customBrewsCount: number;
+  customTrapsCount: number;
+  scheduledMatchups: Record<RegionId, ScheduledMatchup>;
   reagentInventory: Record<string, number>;
   partInventory: Record<string, number>;
   products: CraftedProduct[];
@@ -304,4 +317,5 @@ export interface GameSaveState {
   skills: SkillNode[];
   basiliskChainStage: number; // Tracks the emergent Basilisk Supply Chain story progression
   blackspireResolution: 'NONE' | 'HONEST_BROKER' | 'CARTEL_SYNDICATE' | 'PARTISAN_ARMOURER' | 'CALCULATED_CHAOS';
+  insolvencyEvents?: number;
 }
