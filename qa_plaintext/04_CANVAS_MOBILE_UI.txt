@@ -1,0 +1,1809 @@
+TRAP & TONIC / SIM-002B EXACT PINNED SOURCE / GATE D: 2D CANVAS, MOBILE, CSS, OFFLINE SHELL
+Candidate: 6722ac6edd8ed37633db56804517c859a58829df
+Base: c45f33e143f71acd7a66edacf773161fb4b9416f
+PR #4 https://github.com/anil-ganti-nbc/dungeon-capitalism-simulator/pull/4
+This contains ORIGINAL UTF-8 GitHub source from the pinned commit. Review-only export; no runtime execution implied.
+
+==== BEGIN FILE src/components/ExpeditionCanvas.tsx BLOB 4307d696e7e986c7b0d411da6408571ec5c8081a ====
+import React, { useEffect, useRef, useState } from 'react';
+import { ExpeditionReport, ExpeditionRoomEvent } from '../types/game';
+import { soundFX } from '../utils/sound';
+
+interface ExpeditionCanvasProps {
+  mode: 'TITLE_BACKDROP' | 'EXPEDITION_LIVE';
+  report: ExpeditionReport | null;
+  activeRoomIdx: number;
+  simSpeed: 1 | 2 | 4;
+  reducedMotion: boolean;
+  onRoomAdvance?: (nextIdx: number) => void;
+}
+
+interface Particle {
+  active: boolean;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  size: number;
+  alpha: number;
+  decay: number;
+  color: string;
+}
+
+export const ExpeditionCanvas: React.FC<ExpeditionCanvasProps> = React.memo(({
+  mode,
+  report,
+  activeRoomIdx,
+  simSpeed,
+  reducedMotion,
+  onRoomAdvance
+}) => {
+  const [camera, setCamera] = useState({ x:0, y:0 });
+  const cameraRef = useRef(camera);
+  const moveCamera = (x:number,y:number) => {
+    const next = { x:Math.max(-284,Math.min(284,x)), y:Math.max(-50,Math.min(50,y)) };
+    cameraRef.current=next; setCamera(next);
+  };
+  const drag = useRef<{id:number;x:number;y:number} | null>(null);
+  useEffect(() => { moveCamera((1-activeRoomIdx)*284,0); },[activeRoomIdx,report?.id]);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const propsRef = useRef({ mode, report, activeRoomIdx, simSpeed, reducedMotion, onRoomAdvance });
+
+  useEffect(() => {
+    propsRef.current = { mode, report, activeRoomIdx, simSpeed, reducedMotion, onRoomAdvance };
+  }, [mode, report, activeRoomIdx, simSpeed, reducedMotion, onRoomAdvance]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // Input state: separate continuous held keys from edge-triggered justPressed
+    const heldKeys = new Set<string>();
+    const justPressed = new Set<string>();
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement)?.tagName)) return;
+      const code = e.code;
+      if (!heldKeys.has(code)) {
+        justPressed.add(code);
+      }
+      heldKeys.add(code);
+    };
+
+    const onKeyUp = (e: KeyboardEvent) => {
+      heldKeys.delete(e.code);
+    };
+
+    const onBlur = () => {
+      heldKeys.clear();
+      justPressed.clear();
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onBlur);
+
+    // Pooled particles (120 max, zero GC allocations in loop)
+    const POOL_SIZE = 120;
+    const particles: Particle[] = Array.from({ length: POOL_SIZE }, () => ({
+      active: false,
+      x: 0,
+      y: 0,
+      vx: 0,
+      vy: 0,
+      size: 3,
+      alpha: 0,
+      decay: 1,
+      color: '#D97706'
+    }));
+
+    const spawnBurst = (x: number, y: number, color: string, count: number, speedSpread: number) => {
+      let spawned = 0;
+      for (let i = 0; i < POOL_SIZE && spawned < count; i++) {
+        if (!particles[i].active) {
+          const angle = Math.random() * Math.PI * 2;
+          const speed = (0.3 + Math.random() * 0.7) * speedSpread;
+          particles[i].active = true;
+          particles[i].x = x;
+          particles[i].y = y;
+          particles[i].vx = Math.cos(angle) * speed;
+          particles[i].vy = Math.sin(angle) * speed - 15;
+          particles[i].size = 2 + Math.random() * 4;
+          particles[i].alpha = 1;
+          particles[i].decay = 0.65 + Math.random() * 0.6;
+          particles[i].color = color;
+          spawned++;
+        }
+      }
+    };
+
+    // Simulation state inside loop
+    let animFrameId = 0;
+    let lastTime = performance.now();
+
+    let shakeIntensity = 0;
+    let hitstopTimer = 0;
+    let hitFlashAlpha = 0;
+    let roomPhaseTimer = 0;
+    let lastTriggeredRoom = -1;
+    let heroSquashX = 1;
+    let heroSquashY = 1;
+
+    const resize = () => {
+      if (!canvas.parentElement) return;
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = canvas.parentElement.clientWidth * dpr;
+      canvas.height = canvas.parentElement.clientHeight * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    };
+    resize();
+    window.addEventListener('resize', resize);
+
+    const loop = (now: number) => {
+      const rawDt = (now - lastTime) / 1000;
+      lastTime = now;
+      const dt = Math.min(rawDt, 0.05) * propsRef.current.simSpeed;
+
+      const width = canvas.clientWidth || 800;
+      const height = canvas.clientHeight || 500;
+      const { mode: curMode, report: curReport, activeRoomIdx: curRoomIdx, reducedMotion: isReduced } = propsRef.current;
+
+      // Edge-triggered Space action to step room or trigger burst
+      if (justPressed.has('Space') && curMode === 'EXPEDITION_LIVE' && curReport) {
+        if (propsRef.current.onRoomAdvance) {
+          const next = (curRoomIdx + 1) % curReport.rooms.length;
+          propsRef.current.onRoomAdvance(next);
+        }
+      }
+      justPressed.clear();
+
+      // Continuous WASD camera inspection offset
+      const panSpeed = 140 * dt;
+      let {x:camPanX,y:camPanY}=cameraRef.current;
+      if (heldKeys.has('KeyA') || heldKeys.has('ArrowLeft')) camPanX -= panSpeed;
+      if (heldKeys.has('KeyD') || heldKeys.has('ArrowRight')) camPanX += panSpeed;
+      if (heldKeys.has('KeyW') || heldKeys.has('ArrowUp')) camPanY -= panSpeed;
+      if (heldKeys.has('KeyS') || heldKeys.has('ArrowDown')) camPanY += panSpeed;
+      if (camPanX !== cameraRef.current.x || camPanY !== cameraRef.current.y) moveCamera(camPanX,camPanY);
+      camPanX=cameraRef.current.x; camPanY=cameraRef.current.y;
+
+      // Handle brief 30-80ms simulation hitstop on heavy impacts
+      if (hitstopTimer > 0) {
+        hitstopTimer -= rawDt;
+        animFrameId = requestAnimationFrame(loop);
+        return;
+      }
+
+      roomPhaseTimer += dt;
+      if (curRoomIdx !== lastTriggeredRoom) {
+        lastTriggeredRoom = curRoomIdx;
+        roomPhaseTimer = 0;
+        const roomEvt: ExpeditionRoomEvent | undefined = curReport?.rooms[curRoomIdx];
+        if (roomEvt && curMode === 'EXPEDITION_LIVE') {
+          if (roomEvt.outcome === 'TRAP_TRIGGERED' || roomEvt.outcome === 'REACTION_FAILURE') {
+            hitstopTimer = isReduced ? 0 : 0.055; // 55ms hitstop
+            shakeIntensity = isReduced ? 0 : roomEvt.outcome === 'REACTION_FAILURE' ? 11 : 7;
+            hitFlashAlpha = isReduced ? 0 : 0.28;
+            heroSquashX = 1.28;
+            heroSquashY = 0.74;
+            soundFX.playImpact(roomEvt.outcome === 'REACTION_FAILURE');
+            spawnBurst(
+              width * 0.52,
+              height * 0.54,
+              roomEvt.outcome === 'REACTION_FAILURE' ? '#F59E0B' : '#F43F5E',
+              28,
+              95
+            );
+          } else if (roomEvt.outcome === 'TRAP_BYPASSED' || roomEvt.outcome === 'COUNTER_SUCCEEDED') {
+            heroSquashX = 0.86;
+            heroSquashY = 1.18;
+            soundFX.playBrew();
+            spawnBurst(width * 0.52, height * 0.52, '#10B981', 22, 75);
+          }
+        }
+      }
+
+      // Decay squash & shake
+      heroSquashX += (1 - heroSquashX) * Math.min(1, dt * 8);
+      heroSquashY += (1 - heroSquashY) * Math.min(1, dt * 8);
+      shakeIntensity *= Math.pow(0.04, dt);
+      hitFlashAlpha = Math.max(0, hitFlashAlpha - dt * 1.8);
+
+      const shakeX = isReduced ? 0 : (Math.random() - 0.5) * 2 * shakeIntensity;
+      const shakeY = isReduced ? 0 : (Math.random() - 0.5) * 2 * shakeIntensity;
+
+      // Clear deep obsidian background
+      ctx.fillStyle = '#0B0E14';
+      ctx.fillRect(0, 0, width, height);
+
+      ctx.save();
+      ctx.translate(camPanX + shakeX, camPanY + shakeY);
+
+      // Subtle architectural subterranean masonry grid
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.06)';
+      ctx.lineWidth = 1;
+      const gridStep = 48;
+      const slowPan = curMode === 'TITLE_BACKDROP' && !isReduced ? (now * 0.012) % gridStep : 0;
+      for (let gx = -gridStep; gx < width + gridStep; gx += gridStep) {
+        ctx.beginPath();
+        ctx.moveTo(gx - slowPan, 0);
+        ctx.lineTo(gx - slowPan, height);
+        ctx.stroke();
+      }
+      for (let gy = 0; gy < height; gy += gridStep) {
+        ctx.beginPath();
+        ctx.moveTo(0, gy);
+        ctx.lineTo(width, gy);
+        ctx.stroke();
+      }
+
+      if (curMode === 'TITLE_BACKDROP') {
+        // Atmospheric Title Screen Live World Cutaway: Twin alchemical condensers + subterranean dungeon corridor
+        const cy = height * 0.55;
+        ctx.fillStyle = '#111622';
+        ctx.fillRect(0, cy + 40, width, height - cy);
+        ctx.strokeStyle = 'rgba(217, 119, 6, 0.25)';
+        ctx.beginPath();
+        ctx.moveTo(0, cy + 40);
+        ctx.lineTo(width, cy + 40);
+        ctx.stroke();
+
+        // Ambient floating alchemical & sulphur motes
+        if (Math.random() < 0.35 && !isReduced) {
+          spawnBurst(
+            width * (0.2 + Math.random() * 0.6),
+            cy + 20,
+            Math.random() > 0.5 ? '#D97706' : '#10B981',
+            1,
+            24
+          );
+        }
+      } else if (curReport) {
+        // Render 3-Room Dungeon Cross-Section
+        const floorY = height * 0.68;
+        const roomW = 260;
+        const startX = (width - roomW * 3 - 48) / 2;
+
+        // Corridor floor
+        ctx.fillStyle = '#131926';
+        ctx.fillRect(startX - 24, floorY, roomW * 3 + 96, 18);
+
+        curReport.rooms.forEach((rm, idx) => {
+          const rx = startX + idx * (roomW + 24);
+          const ry = floorY - 170;
+          const isCurrent = idx === curRoomIdx;
+
+          // Room chamber frame
+          ctx.fillStyle = isCurrent ? '#161F30' : '#0F1420';
+          ctx.strokeStyle = isCurrent
+            ? rm.outcome === 'REACTION_FAILURE'
+              ? '#F59E0B'
+              : rm.outcome === 'TRAP_TRIGGERED'
+              ? '#F43F5E'
+              : '#10B981'
+            : 'rgba(148, 163, 184, 0.16)';
+          ctx.lineWidth = isCurrent ? 2 : 1;
+          ctx.beginPath();
+          ctx.roundRect(rx, ry, roomW, 170, 8);
+          ctx.fill();
+          ctx.stroke();
+
+          // Sulphur Fog visual haze inside room if present
+          if (rm.chemicalReaction?.includes('Sulphur') || rm.hazardName.includes('Sulphur')) {
+            const pulse = isReduced ? 0.16 : 0.14 + Math.sin(now * 0.004 + idx) * 0.05;
+            ctx.fillStyle = `rgba(234, 179, 8, ${pulse})`;
+            ctx.fillRect(rx + 6, ry + 34, roomW - 12, 128);
+          }
+
+          // Room Header
+          ctx.fillStyle = '#94A3B8';
+          ctx.font = '600 11px "JetBrains Mono", monospace';
+          ctx.fillText(`ROOM 0${rm.roomIndex} · ${rm.triggerType}`, rx + 12, ry + 22, roomW-24);
+
+          // Pressure Plate / Trigger Telegraph on Floor
+          const plateX = rx + roomW * 0.55;
+          const plateDepressed = rm.outcome === 'TRAP_TRIGGERED' || rm.outcome === 'REACTION_FAILURE';
+          ctx.fillStyle = plateDepressed ? '#F43F5E' : rm.outcome === 'TRAP_BYPASSED' ? '#10B981' : '#D97706';
+          ctx.fillRect(plateX - 24, floorY - (plateDepressed ? 3 : 7), 48, plateDepressed ? 3 : 7);
+
+          // Windup telegraph arc
+          if (isCurrent) {
+            const windupPct = Math.min(1, roomPhaseTimer / 1.2);
+            ctx.strokeStyle = plateDepressed ? 'rgba(244, 63, 94, 0.55)' : 'rgba(16, 185, 129, 0.55)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(plateX, floorY - 48, 26, -Math.PI * 0.8, -Math.PI * 0.8 + Math.PI * 1.6 * windupPct);
+            ctx.stroke();
+          }
+
+          // Hazard mechanism icon/silhouette
+          ctx.fillStyle = '#E2E8F0';
+          ctx.font = '600 12px "Plus Jakarta Sans", sans-serif';
+          const shortHazard = rm.hazardName.length > 26 ? rm.hazardName.slice(0, 25) + '…' : rm.hazardName;
+          ctx.fillText(shortHazard, rx + 12, ry + 46);
+
+          // Mass readout vs Threshold
+          if (rm.triggerMassThresholdKg > 0) {
+            ctx.fillStyle = rm.heroEffectiveMassKg < rm.triggerMassThresholdKg ? '#34D399' : '#FBBF24';
+            ctx.font = '500 11px "JetBrains Mono", monospace';
+            ctx.fillText(
+              `Hero ${rm.heroEffectiveMassKg}kg vs Plate ${rm.triggerMassThresholdKg}kg`,
+              rx + 12,
+              ry + 66
+            );
+          }
+
+          // Hero Squad Avatar with Squash-and-Stretch & Chicken-Morph visual indicator
+          const isChickenMorphed = rm.heroEffectiveMassKg <= 30;
+          const hx = rx + roomW * 0.28;
+          const hy = floorY - 8;
+
+          ctx.save();
+          ctx.translate(hx, hy);
+          ctx.scale(isCurrent ? heroSquashX : 1, isCurrent ? heroSquashY : 1);
+
+          if (isChickenMorphed) {
+            // Draw nimble Featherweight / Bantam Rooster silhouette
+            ctx.fillStyle = '#FDE68A';
+            ctx.beginPath();
+            ctx.arc(0, -14, 11, 0, Math.PI * 2);
+            ctx.fill();
+            // Red comb
+            ctx.fillStyle = '#F43F5E';
+            ctx.fillRect(-3, -29, 6, 5);
+            // Beak
+            ctx.fillStyle = '#D97706';
+            ctx.beginPath();
+            ctx.moveTo(10, -16);
+            ctx.lineTo(17, -13);
+            ctx.lineTo(10, -10);
+            ctx.fill();
+          } else {
+            // Armored Hero Vanguard silhouette
+            ctx.fillStyle = '#38BDF8';
+            ctx.beginPath();
+            ctx.roundRect(-12, -38, 24, 34, 5);
+            ctx.fill();
+            // Shield
+            ctx.fillStyle = '#94A3B8';
+            ctx.fillRect(6, -32, 9, 22);
+          }
+          ctx.restore();
+
+          // Outcome label inside room bottom
+          const badgeColor =
+            rm.outcome === 'TRAP_BYPASSED' || rm.outcome === 'COUNTER_SUCCEEDED'
+              ? '#10B981'
+              : rm.outcome === 'REACTION_FAILURE'
+              ? '#F59E0B'
+              : '#F43F5E';
+          ctx.fillStyle = badgeColor;
+          ctx.font = '700 11px "JetBrains Mono", monospace';
+          ctx.fillText(
+            `${rm.outcome.replace('_', ' ')} · -${rm.damageDealt}HP · +${rm.lootSecured}g`,
+            rx + 12,
+            ry + 154
+          );
+        });
+      }
+
+      // Update & draw pooled particles
+      for (let i = 0; i < POOL_SIZE; i++) {
+        const p = particles[i];
+        if (!p.active) continue;
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.vy += 38 * dt;
+        p.alpha -= p.decay * dt;
+        if (p.alpha <= 0) {
+          p.active = false;
+          continue;
+        }
+        ctx.globalAlpha = Math.max(0, p.alpha);
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+      ctx.restore();
+
+      // Hit flash overlay
+      if (hitFlashAlpha > 0) {
+        ctx.fillStyle = `rgba(245, 158, 11, ${hitFlashAlpha})`;
+        ctx.fillRect(0, 0, width, height);
+      }
+
+      animFrameId = requestAnimationFrame(loop);
+    };
+
+    animFrameId = requestAnimationFrame(loop);
+
+    return () => {
+      cancelAnimationFrame(animFrameId);
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onBlur);
+      window.removeEventListener('resize', resize);
+    };
+  }, []);
+
+  return (
+    <div className="relative w-full h-full overflow-hidden bg-[#0B0E14]">
+      <canvas
+        aria-label="Dungeon expedition camera. Drag to pan; arrow keys or WASD also pan."
+        tabIndex={mode === 'EXPEDITION_LIVE' ? 0 : -1}
+        data-camera-x={camera.x.toFixed(2)} data-camera-y={camera.y.toFixed(2)}
+        onPointerDown={e => { if (mode !== 'EXPEDITION_LIVE') return; e.currentTarget.setPointerCapture(e.pointerId); drag.current={id:e.pointerId,x:e.clientX,y:e.clientY}; }}
+        onPointerMove={e => { const d=drag.current; if (!d || d.id!==e.pointerId) return;
+          moveCamera(cameraRef.current.x+e.clientX-d.x,cameraRef.current.y+e.clientY-d.y);
+          drag.current={id:e.pointerId,x:e.clientX,y:e.clientY}; }}
+        onPointerUp={() => { drag.current=null; }} onPointerCancel={() => { drag.current=null; }}
+        onLostPointerCapture={() => { drag.current=null; }}
+        ref={canvasRef}
+        className="block w-full h-full max-w-full"
+        style={{ touchAction: mode === 'EXPEDITION_LIVE' ? 'none' : 'pan-y' }}
+      />
+    </div>
+  );
+});
+
+==== END FILE src/components/ExpeditionCanvas.tsx ====
+
+==== BEGIN FILE src/components/TitleScreen.tsx BLOB e9aa0d132e5bdc4aa7a7867891a828610d0994c0 ====
+import React, { useEffect } from 'react';
+import { ExpeditionCanvas } from './ExpeditionCanvas';
+
+interface TitleScreenProps {
+  hasSavedGame: boolean;
+  savedDay: number;
+  savedGold: number;
+  reducedMotion: boolean;
+  onStartNewOrContinue: () => void;
+  onLoadBasiliskScenario: () => void;
+  onResetSave: () => void;
+}
+
+export const TitleScreen: React.FC<TitleScreenProps> = ({
+  hasSavedGame,
+  savedDay,
+  savedGold,
+  reducedMotion,
+  onStartNewOrContinue,
+  onLoadBasiliskScenario,
+  onResetSave
+}) => {
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.code === 'Enter' || e.code === 'Space') {
+        e.preventDefault();
+        onStartNewOrContinue();
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [onStartNewOrContinue]);
+
+  return (
+    <div className="relative w-screen h-screen overflow-hidden bg-[#0B0E14] select-none flex flex-col justify-between p-8 md:p-14">
+      {/* Live 60fps Atmospheric Dungeon & Alchemy Cutaway Canvas */}
+      <div className="absolute inset-0 z-0 opacity-75">
+        <ExpeditionCanvas
+          mode="TITLE_BACKDROP"
+          report={null}
+          activeRoomIdx={0}
+          simSpeed={1}
+          reducedMotion={reducedMotion}
+        />
+      </div>
+
+      {/* Measured contrast scrim for guaranteed WCAG AA legibility */}
+      <div className="absolute inset-0 z-0 bg-gradient-to-t from-[#0B0E14] via-[#0B0E14]/65 to-[#0B0E14]/40 pointer-events-none" />
+
+      {/* Top quiet edition metadata (unboxed text, zero pills) */}
+      <div className="relative z-10 flex items-center justify-between text-xs text-slate-400 font-mono">
+        <span>TRAP &amp; TONIC · DETERMINISTIC EDITION v1.0</span>
+        <span>4 REALMS · 12 MASTERS · 16 PARTIES · 48 REAGENTS · 64 TRAP MODULES</span>
+      </div>
+
+      {/* Centerpiece: Bespoke SVG Lockup over generous negative space */}
+      <div className="relative z-10 max-w-3xl mx-auto text-center my-auto py-8">
+        <div className="flex justify-center mb-6">
+          <svg
+            width="128"
+            height="92"
+            viewBox="0 0 128 92"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            aria-label="Trap and Tonic Balance Scale Emblem"
+            className="text-amber-500"
+          >
+            {/* Central Merchant Balance Beam */}
+            <path d="M64 10V78M42 78H86" stroke="#D97706" strokeWidth="2.5" strokeLinecap="round" />
+            <path d="M20 26L64 18L108 26" stroke="#F59E0B" strokeWidth="2.5" strokeLinecap="round" />
+            <circle cx="64" cy="18" r="4.5" fill="#FDE68A" />
+            {/* Left Pan: Alchemical Tonic Flask (Emerald) */}
+            <path d="M20 26L12 46H28L20 26Z" stroke="#94A3B8" strokeWidth="1.5" />
+            <path
+              d="M16 38H24V43L29 53C30 55 28.5 58 26 58H14C11.5 58 10 55 11 53L16 43V38Z"
+              fill="#064E3B"
+              stroke="#10B981"
+              strokeWidth="2"
+            />
+            <circle cx="19" cy="51" r="2" fill="#34D399" />
+            <circle cx="23" cy="48" r="1.5" fill="#A7F3D0" />
+            {/* Right Pan: Serrated Dungeon Trap Jaw (Crimson/Brass) */}
+            <path d="M108 26L100 46H116L108 26Z" stroke="#94A3B8" strokeWidth="1.5" />
+            <path
+              d="M95 56C95 48 101 44 108 44C115 44 121 48 121 56H95Z"
+              fill="#4C0519"
+              stroke="#F43F5E"
+              strokeWidth="2"
+            />
+            <path d="M99 48L102 53L105 47L108 53L111 47L114 53L117 48" stroke="#FDA4AF" strokeWidth="1.5" />
+          </svg>
+        </div>
+
+        <p className="text-xs font-mono tracking-widest text-amber-400/90 mb-3">
+          THE HOUSE ALWAYS SELLS TWICE
+        </p>
+
+        <h1 className="font-display text-4xl sm:text-6xl font-bold tracking-tight text-slate-50 mb-4">
+          Trap &amp; Tonic: Conflict of Interest
+        </h1>
+
+        <p className="text-sm sm:text-base text-slate-300 max-w-xl mx-auto leading-relaxed mb-8">
+          Supply Dungeon Masters with lethal pressure plates, basilisks, and sulphur fog by morning—then sell Adventuring Parties the featherweight morphs and chelated antidotes to survive them by night.
+        </p>
+
+        {/* Primary CTA & Scenario Quick-Load */}
+        <div className="flex flex-wrap items-center justify-center gap-4">
+          <button
+            onClick={onStartNewOrContinue}
+            className="px-7 py-3.5 bg-amber-600 hover:bg-amber-500 text-slate-950 font-semibold text-sm rounded-lg transition-colors cursor-pointer whitespace-nowrap shrink-0 shadow-lg"
+          >
+            {hasSavedGame ? `Continue Ledger (Day ${savedDay} · ${savedGold.toLocaleString()}g)` : 'Open Merchant Ledger'}
+          </button>
+
+          <button
+            onClick={onLoadBasiliskScenario}
+            className="px-5 py-3.5 bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700 font-medium text-sm rounded-lg transition-colors cursor-pointer whitespace-nowrap shrink-0"
+          >
+            Load Scenario: The Basilisk Supply Chain
+          </button>
+
+          {hasSavedGame && (
+            <button
+              onClick={onResetSave}
+              className="px-4 py-3.5 text-xs font-mono text-slate-400 hover:text-rose-400 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+            >
+              Reset Campaign
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Single flat control-hint line at bottom */}
+      <div className="relative z-10 text-center text-xs font-mono text-slate-400">
+        <span>Enter / Space Open Ledger · WASD Pan Dungeon Camera · Space Step Room Replay · Esc Pause &amp; Save</span>
+      </div>
+    </div>
+  );
+};
+
+==== END FILE src/components/TitleScreen.tsx ====
+
+==== BEGIN FILE src/components/PWAInstallWidgets.tsx BLOB 54e79e0f0b57a7517ff1cd4ec97e28258b8a74fe ====
+import React, { useEffect, useState } from 'react';
+
+interface BeforeInstallPromptEvent extends Event {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
+}
+
+export function usePWAInstall() {
+  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [isInstalled, setIsInstalled] = useState(false);
+  const [isIOS, setIsIOS] = useState(false);
+
+  useEffect(() => {
+    const isStandalone =
+      window.matchMedia('(display-mode: standalone)').matches ||
+      (window.navigator as unknown as { standalone?: boolean }).standalone === true;
+    setIsInstalled(isStandalone);
+
+    const userAgent = window.navigator.userAgent.toLowerCase();
+    const isIOSDevice = /iphone|ipad|ipod/.test(userAgent);
+    setIsIOS(isIOSDevice);
+
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e as BeforeInstallPromptEvent);
+    };
+
+    const handleAppInstalled = () => {
+      setIsInstalled(true);
+      setDeferredPrompt(null);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    window.addEventListener('appinstalled', handleAppInstalled);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener('appinstalled', handleAppInstalled);
+    };
+  }, []);
+
+  const install = async () => {
+    if (!deferredPrompt) return false;
+    await deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === 'accepted') {
+      setIsInstalled(true);
+      setDeferredPrompt(null);
+      return true;
+    }
+    return false;
+  };
+
+  return {
+    isInstallable: !!deferredPrompt,
+    isInstalled,
+    isIOS,
+    install
+  };
+}
+
+export function useOnlineStatus() {
+  const [isOnline, setIsOnline] = useState(
+    typeof navigator !== 'undefined' ? navigator.onLine : true
+  );
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  return isOnline;
+}
+
+export const PWAInstallButton: React.FC = () => {
+  const { isInstallable, isInstalled, isIOS, install } = usePWAInstall();
+  const [showIOSGuide, setShowIOSGuide] = useState(false);
+
+  if (isInstalled) {
+    return null;
+  }
+
+  if (isInstallable) {
+    return (
+      <button
+        onClick={install}
+        className="min-h-[40px] px-3 py-1.5 text-xs font-mono font-semibold text-emerald-300 bg-slate-900 hover:bg-slate-800 border border-emerald-700/70 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+      >
+        Install Offline App
+      </button>
+    );
+  }
+
+  if (isIOS) {
+    return (
+      <>
+        <button
+          onClick={() => setShowIOSGuide(true)}
+          className="min-h-[40px] px-3 py-1.5 text-xs font-mono font-medium text-emerald-300 bg-slate-900 hover:bg-slate-800 border border-slate-700 rounded-lg whitespace-nowrap shrink-0 cursor-pointer"
+        >
+          Install on iOS
+        </button>
+
+        {showIOSGuide && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
+            <div className="w-full max-w-sm rounded-xl bg-[#131822] border border-slate-700 p-6 shadow-xl">
+              <h3 className="font-display text-lg font-bold text-slate-100">
+                Install Offline on iPhone / iPad
+              </h3>
+              <p className="mt-2 text-xs text-slate-300 leading-relaxed">
+                1. Tap the <strong>Share</strong> button in the Safari toolbar.<br />
+                2. Scroll down and tap <strong>Add to Home Screen</strong> for full offline cold-start play.
+              </p>
+              <button
+                onClick={() => setShowIOSGuide(false)}
+                className="mt-4 w-full min-h-[44px] rounded-lg bg-amber-600 hover:bg-amber-500 py-2 text-xs font-mono font-semibold text-slate-950 cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        )}
+      </>
+    );
+  }
+
+  return null;
+};
+
+export const OfflineIndicator: React.FC = () => {
+  const isOnline = useOnlineStatus();
+
+  if (isOnline) return null;
+
+  return (
+    <div className="fixed bottom-16 md:bottom-4 left-4 z-50 flex items-center gap-2 rounded-lg bg-amber-600 px-3 py-2 text-xs font-mono font-semibold text-slate-950 shadow-lg">
+      <span>OFFLINE COLD-START ACTIVE — Local Service Worker &amp; Atomic Ledger in Use</span>
+    </div>
+  );
+};
+
+==== END FILE src/components/PWAInstallWidgets.tsx ====
+
+==== BEGIN FILE src/components/Sim001AuditPanel.tsx BLOB 31ec876e34948f95cc5d7ddf1009b03c657b37ee ====
+import React, { useState, useEffect } from 'react';
+import {
+  StrategyId,
+  CampaignMetrics,
+  AdversarialTestResult,
+  runSingleCampaign,
+  runAdversarialTestSuite
+} from '../engine/campaignRunner';
+
+interface SimSummaryData {
+  meta: {
+    campaignBatchId: string;
+    timestampUtc: string;
+    nodeVersion: string;
+    rulesVersion?: string;
+    totalCampaigns: number;
+    seedsPerStrategy: number;
+    horizonDays: number;
+    totalSimulatedDays: number;
+    executionTimeMs: number;
+    sourceFileSha256: Record<string, string>;
+  };
+  strategies: Record<string, any>;
+  pairedComparisons: {
+    balancedBeatPredatoryCount: number;
+    balancedBeatPredatoryPct: number;
+    industrialistTopWealthCount: number;
+    predatoryHighestClaimsCount: number;
+    predatoryHighestClaimsPct: number;
+  };
+  adversarialSuite: AdversarialTestResult[];
+  notableCampaigns: CampaignMetrics[];
+}
+
+const STRATEGY_LABELS: Record<StrategyId, { title: string; subtitle: string; color: string }> = {
+  BALANCED_MERCHANT: {
+    title: '1. Balanced Merchant',
+    subtitle: 'Supplies Dungeon Masters & Heroes equally; optimizes long-term bilateral retention',
+    color: 'text-emerald-400 border-emerald-500/40 bg-emerald-950/20'
+  },
+  DUNGEON_LOYALIST: {
+    title: '2. Dungeon Loyalist',
+    subtitle: 'Prioritizes monsters, lethal hazards, traps, and exclusive Dungeon Master contracts',
+    color: 'text-rose-400 border-rose-500/40 bg-rose-950/20'
+  },
+  HERO_BENEFACTOR: {
+    title: '3. Hero Benefactor',
+    subtitle: 'Prioritizes antidotes, featherweight morphs, warranties, and party survival',
+    color: 'text-sky-400 border-sky-500/40 bg-sky-950/20'
+  },
+  ALCHEMICAL_INDUSTRIALIST: {
+    title: '4. Alchemical Industrialist',
+    subtitle: 'High-margin chelated potion R&D, batch yields, and countermeasure mastery',
+    color: 'text-purple-400 border-purple-500/40 bg-purple-950/20'
+  },
+  PREDATORY_CAPITALIST: {
+    title: '5. Predatory Capitalist',
+    subtitle: 'Price gouging (122%–125%), unstabilized antidotes, and double-dealing exclusivity',
+    color: 'text-amber-400 border-amber-500/40 bg-amber-950/20'
+  }
+};
+
+export const Sim001AuditPanel: React.FC = () => {
+  const [sim002Data, setSim002Data] = useState<SimSummaryData | null>(null);
+  const [sim001Data, setSim001Data] = useState<SimSummaryData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [activeDataset, setActiveDataset] = useState<'SIM_002' | 'SIM_001'>('SIM_002');
+  const [activeSubTab, setActiveSubTab] = useState<
+    'COMPARISON' | 'OVERVIEW' | 'DISTRIBUTIONS' | 'ADVERSARIAL' | 'SANDBOX'
+  >('COMPARISON');
+
+  // Interactive Sandbox state
+  const [sandboxSeed, setSandboxSeed] = useState<number>(20260001);
+  const [sandboxStrategy, setSandboxStrategy] = useState<StrategyId>('BALANCED_MERCHANT');
+  const [sandboxDays, setSandboxDays] = useState<number>(120);
+  const [liveResult, setLiveResult] = useState<{
+    metrics: CampaignMetrics;
+    actionLogCount: number;
+    sampleActions: string[];
+  } | null>(null);
+  const [liveAdversarial, setLiveAdversarial] = useState<AdversarialTestResult[] | null>(null);
+
+  useEffect(() => {
+    Promise.all([
+      fetch('/sim_002/strategy_comparison.json')
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null),
+      fetch('/sim_001/strategy_comparison.json')
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null)
+    ]).then(([d2, d1]) => {
+      if (d2) setSim002Data(d2);
+      if (d1) setSim001Data(d1);
+      setLoading(false);
+    });
+  }, []);
+
+  const handleRunLiveSandbox = () => {
+    const res = runSingleCampaign(sandboxSeed, sandboxStrategy, sandboxDays, true);
+    setLiveResult({
+      metrics: res.metrics,
+      actionLogCount: res.actionLog.length,
+      sampleActions: res.actionLog.slice(0, 24)
+    });
+  };
+
+  const handleRunLiveAdversarial = () => {
+    const suite = runAdversarialTestSuite();
+    setLiveAdversarial(suite);
+  };
+
+  if (loading) {
+    return (
+      <div className="p-8 text-center text-slate-400 font-mono text-sm">
+        Loading SIM-002 & SIM-001 Empirical Archives (10,000 Campaigns / 1,200,000 Trading Days)...
+      </div>
+    );
+  }
+
+  const data = activeDataset === 'SIM_002' ? sim002Data || sim001Data : sim001Data || sim002Data;
+  if (!data) {
+    return (
+      <div className="p-8 text-center text-rose-400 font-mono text-sm">
+        Failed to load simulation archives.
+      </div>
+    );
+  }
+
+  const strategiesOrder: StrategyId[] = [
+    'BALANCED_MERCHANT',
+    'DUNGEON_LOYALIST',
+    'HERO_BENEFACTOR',
+    'ALCHEMICAL_INDUSTRIALIST',
+    'PREDATORY_CAPITALIST'
+  ];
+
+  const displayedAdversarial =
+    activeDataset === 'SIM_002' ? liveAdversarial || data.adversarialSuite : data.adversarialSuite;
+
+  return (
+    <div className="space-y-6">
+      {/* Top Banner */}
+      <div className="bg-gradient-to-r from-[#131822] via-[#171f2e] to-[#131822] border border-emerald-500/40 rounded-xl p-5 shadow-xl">
+        <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-800">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="px-2 py-0.5 rounded text-[10px] font-mono uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold">
+                SIM-002 FOUNDATION REPAIR VERIFIED
+              </span>
+              <span className="px-2 py-0.5 rounded text-[10px] font-mono uppercase tracking-wider bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                CODEX F01–F08 PASS
+              </span>
+              <span className="text-xs font-mono text-slate-400">
+                Batch: {data.meta.campaignBatchId} ({data.meta.rulesVersion || 'v1.0-baseline'})
+              </span>
+            </div>
+            <h2 className="font-display text-xl font-bold text-slate-100 mt-1">
+              Empirical Stress Campaign & Foundation Repair Audit (SIM-001 vs SIM-002)
+            </h2>
+            <p className="text-xs text-slate-400 mt-0.5">
+              5,000 Seeded Campaigns per Batch • 1,000 Paired World Seeds × 5 Strategies × 120 In-Game Days = 600,000 Trading Days & 1,800,000 Rooms
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center bg-slate-950 p-1 rounded-lg border border-slate-800">
+              <button
+                onClick={() => setActiveDataset('SIM_002')}
+                className={`px-3 py-1.5 rounded text-xs font-mono font-bold transition-colors ${
+                  activeDataset === 'SIM_002'
+                    ? 'bg-emerald-500 text-slate-950'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                SIM-002 (Repaired v2.0)
+              </button>
+              <button
+                onClick={() => setActiveDataset('SIM_001')}
+                className={`px-3 py-1.5 rounded text-xs font-mono font-bold transition-colors ${
+                  activeDataset === 'SIM_001'
+                    ? 'bg-amber-500 text-slate-950'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                SIM-001 (Frozen Baseline)
+              </button>
+            </div>
+
+            <a
+              href={
+                activeDataset === 'SIM_002'
+                  ? '/sim_002/strategy_comparison.json'
+                  : '/sim_001/strategy_comparison.json'
+              }
+              download={`${activeDataset.toLowerCase()}_strategy_comparison.json`}
+              className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-mono transition-colors"
+            >
+              Download JSON
+            </a>
+            <a
+              href={
+                activeDataset === 'SIM_002'
+                  ? '/sim_002/campaign_results.csv'
+                  : '/sim_001/campaign_results.csv'
+              }
+              download={`${activeDataset.toLowerCase()}_campaign_results.csv`}
+              className="px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-mono font-semibold transition-colors"
+            >
+              Download 5,000-Row CSV
+            </a>
+          </div>
+        </div>
+
+        {/* Sub-navigation */}
+        <div className="flex flex-wrap items-center gap-2 pt-4">
+          {[
+            { id: 'COMPARISON', label: 'SIM-001 vs SIM-002 Delta Matrix' },
+            { id: 'OVERVIEW', label: `Executive Findings (${activeDataset})` },
+            { id: 'DISTRIBUTIONS', label: `5,000-Campaign Percentiles (${activeDataset})` },
+            { id: 'ADVERSARIAL', label: 'Codex F01–F08 & Adversarial Suite' },
+            { id: 'SANDBOX', label: 'Live Headless Campaign Runner' }
+          ].map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setActiveSubTab(t.id as any)}
+              className={`px-3.5 py-2 rounded-lg text-xs font-medium transition-all ${
+                activeSubTab === t.id
+                  ? 'bg-amber-500 text-slate-950 font-bold shadow'
+                  : 'bg-slate-900 text-slate-300 hover:bg-slate-800 border border-slate-800'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* TAB 0: SIM-001 vs SIM-002 SIDE-BY-SIDE COMPARISON */}
+      {activeSubTab === 'COMPARISON' && sim002Data && sim001Data && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="bg-[#131822] border border-emerald-500/30 rounded-xl p-4">
+              <div className="text-[10px] font-mono uppercase tracking-wider text-emerald-400">
+                F01–F03 P0 Trust & Identity
+              </div>
+              <div className="text-lg font-display font-bold text-slate-100 mt-1">
+                100% Deterministic
+              </div>
+              <p className="text-xs text-slate-400 mt-1">
+                Scheduled matchups match resolution (`F01`), canonical formula hashes preserve custom variants (`F02`), and Hard-gated Catalyst provenance blocks Day-1 exploits (`F03`).
+              </p>
+            </div>
+
+            <div className="bg-[#131822] border border-emerald-500/30 rounded-xl p-4">
+              <div className="text-[10px] font-mono uppercase tracking-wider text-emerald-400">
+                F04 Specialist Insolvency Rate
+              </div>
+              <div className="text-lg font-display font-bold text-slate-100 mt-1">
+                100.0% → 0.0%
+              </div>
+              <p className="text-xs text-slate-400 mt-1">
+                Removed the hidden `120g` bailout floor (`ADV-04`). Dungeon Loyalist (`+84,471g` net worth) and Hero Benefactor (`+51,748g` net worth) are now 100% solvent with `0` bailout days.
+              </p>
+            </div>
+
+            <div className="bg-[#131822] border border-emerald-500/30 rounded-xl p-4">
+              <div className="text-[10px] font-mono uppercase tracking-wider text-emerald-400">
+                F05 Balanced vs Predatory
+              </div>
+              <div className="text-lg font-display font-bold text-slate-100 mt-1">
+                1.3% → 100.0% Win Rate
+              </div>
+              <p className="text-xs text-slate-400 mt-1">
+                Low-trust customer boycotts (`trust &lt; 50`) and tier-scaled exclusivity fines (`160g–520g`) drop Predatory Capitalist from Rank #1 (`SIM-001`) to Rank #5 (`SIM-002`).
+              </p>
+            </div>
+
+            <div className="bg-[#131822] border border-emerald-500/30 rounded-xl p-4">
+              <div className="text-[10px] font-mono uppercase tracking-wider text-emerald-400">
+                Tactical Survival Spread
+              </div>
+              <div className="text-lg font-display font-bold text-slate-100 mt-1">
+                62.5% vs 100.0%
+              </div>
+              <p className="text-xs text-slate-400 mt-1">
+                In `SIM-001`, all strategies had ~95% survival. In `SIM-002`, Dungeon Loyalist drives survival down to `62.5%` (`143` traps triggered), while Hero Benefactor achieves `100.0%`.
+              </p>
+            </div>
+          </div>
+
+          <div className="bg-[#131822] border border-slate-800 rounded-xl p-5 overflow-x-auto">
+            <h3 className="font-display text-base font-bold text-slate-100 mb-1">
+              Before vs After Reconstruction: SIM-001 (Frozen Baseline) vs SIM-002 (Repaired Engine)
+            </h3>
+            <p className="text-xs text-slate-400 mb-4">
+              Direct paired comparison across identical seeds (`20260001..20261000`) and 120-day horizon.
+            </p>
+            <table className="w-full text-left border-collapse text-xs font-mono">
+              <thead>
+                <tr className="border-b border-slate-800 text-slate-400 text-[10px] uppercase">
+                  <th className="py-2.5 pr-3">Strategy</th>
+                  <th className="py-2.5 px-2 text-right">SIM-001 Net Profit (P50)</th>
+                  <th className="py-2.5 px-2 text-right text-emerald-400">SIM-002 Net Profit (P50)</th>
+                  <th className="py-2.5 px-2 text-right">SIM-001 Bankruptcy</th>
+                  <th className="py-2.5 px-2 text-right text-emerald-400">SIM-002 Bankruptcy</th>
+                  <th className="py-2.5 px-2 text-right">SIM-001 Hard / Expert</th>
+                  <th className="py-2.5 px-2 text-right text-emerald-400">SIM-002 Hard / Expert</th>
+                  <th className="py-2.5 pl-2 text-right">SIM-001 → SIM-002 Survival</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60">
+                {strategiesOrder.map((stKey) => {
+                  const s1 = sim001Data.strategies[stKey];
+                  const s2 = sim002Data.strategies[stKey];
+                  if (!s1 || !s2) return null;
+                  return (
+                    <tr key={stKey} className="hover:bg-slate-900/40">
+                      <td className="py-3 pr-3 font-sans font-semibold text-slate-200">
+                        {STRATEGY_LABELS[stKey].title}
+                      </td>
+                      <td
+                        className={`py-3 px-2 text-right ${
+                          s1.netProfit.p50 < 0 ? 'text-rose-400' : 'text-slate-300'
+                        }`}
+                      >
+                        {s1.netProfit.p50.toLocaleString()}g
+                      </td>
+                      <td className="py-3 px-2 text-right font-bold text-emerald-400">
+                        +{s2.netProfit.p50.toLocaleString()}g
+                      </td>
+                      <td
+                        className={`py-3 px-2 text-right ${
+                          s1.strictBankruptcyRatePct > 0 ? 'text-rose-400 font-bold' : 'text-slate-400'
+                        }`}
+                      >
+                        {s1.strictBankruptcyRatePct}% ({s1.bailoutFloorTriggeredDays.p50}d)
+                      </td>
+                      <td className="py-3 px-2 text-right font-bold text-emerald-400">
+                        {s2.strictBankruptcyRatePct}% ({s2.bailoutFloorTriggeredDays.p50}d)
+                      </td>
+                      <td className="py-3 px-2 text-right text-slate-400">
+                        {s1.hardUnlockRatePct}% / {s1.expertCatalystStrictRatePct}%
+                      </td>
+                      <td className="py-3 px-2 text-right font-bold text-emerald-400">
+                        {s2.hardUnlockRatePct}% (D{s2.dayReachedHard.p50}) / {s2.expertCatalystStrictRatePct}% (D{s2.dayReachedExpert.p50})
+                      </td>
+                      <td className="py-3 pl-2 text-right text-sky-300">
+                        {s1.partySurvivalRatePct.p50}% → <span className="font-bold">{s2.partySurvivalRatePct.p50}%</span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 1: EXECUTIVE OVERVIEW */}
+      {activeSubTab === 'OVERVIEW' && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-[#131822] border border-slate-800 rounded-xl p-4">
+              <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
+                Dataset Rules Version
+              </div>
+              <div className="text-lg font-display font-bold text-emerald-400 mt-1">
+                {data.meta.rulesVersion || 'v1.0-sim001'}
+              </div>
+              <p className="text-xs text-slate-400 mt-1.5 leading-relaxed">
+                Batch `{data.meta.campaignBatchId}` executed in `{data.meta.executionTimeMs}ms` across `600,000` trading days.
+              </p>
+            </div>
+
+            <div className="bg-[#131822] border border-slate-800 rounded-xl p-4">
+              <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
+                Balanced vs Predatory Win Rate
+              </div>
+              <div className="text-lg font-display font-bold text-amber-400 mt-1">
+                {data.pairedComparisons.balancedBeatPredatoryPct}% ({data.pairedComparisons.balancedBeatPredatoryCount}/1,000)
+              </div>
+              <p className="text-xs text-slate-400 mt-1.5 leading-relaxed">
+                Paired seed comparison of 120-day terminal net worth between Balanced Merchant and Predatory Capitalist.
+              </p>
+            </div>
+
+            <div className="bg-[#131822] border border-slate-800 rounded-xl p-4">
+              <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
+                Alchemical R&D Top Wealth
+              </div>
+              <div className="text-lg font-display font-bold text-purple-400 mt-1">
+                {(data.pairedComparisons.industrialistTopWealthCount / 10).toFixed(1)}% ({data.pairedComparisons.industrialistTopWealthCount}/1,000)
+              </div>
+              <p className="text-xs text-slate-400 mt-1.5 leading-relaxed">
+                Seeds where Alchemical Industrialist achieved the highest terminal net worth across all 5 strategies.
+              </p>
+            </div>
+
+            <div className="bg-[#131822] border border-slate-800 rounded-xl p-4">
+              <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
+                Predatory Highest Fines Rate
+              </div>
+              <div className="text-lg font-display font-bold text-rose-400 mt-1">
+                {data.pairedComparisons.predatoryHighestClaimsPct}% ({data.pairedComparisons.predatoryHighestClaimsCount}/1,000)
+              </div>
+              <p className="text-xs text-slate-400 mt-1.5 leading-relaxed">
+                Seeds where Predatory Capitalist paid the highest cumulative warranty claims and exclusivity breach fines.
+              </p>
+            </div>
+          </div>
+
+          {/* Strategy Summary Table */}
+          <div className="bg-[#131822] border border-slate-800 rounded-xl p-5 overflow-x-auto">
+            <h3 className="font-display text-base font-bold text-slate-100 mb-3">
+              Paired 5,000-Campaign Strategy Comparison (Medians / P50 across 1,000 Shared Seeds — {activeDataset})
+            </h3>
+            <table className="w-full text-left border-collapse text-xs font-mono">
+              <thead>
+                <tr className="border-b border-slate-800 text-slate-400 text-[10px] uppercase">
+                  <th className="py-2.5 pr-3">Strategy</th>
+                  <th className="py-2.5 px-2 text-right">Gross Rev (P50)</th>
+                  <th className="py-2.5 px-2 text-right">Net Profit (P50)</th>
+                  <th className="py-2.5 px-2 text-right">Net Worth (P50)</th>
+                  <th className="py-2.5 px-2 text-right">Claims & Fines</th>
+                  <th className="py-2.5 px-2 text-right">Insolvent Rate</th>
+                  <th className="py-2.5 px-2 text-right">Bailout Days</th>
+                  <th className="py-2.5 px-2 text-right">Normal / Hard</th>
+                  <th className="py-2.5 px-2 text-right">Expert (Strict / UI)</th>
+                  <th className="py-2.5 pl-2 text-right">Survival</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60">
+                {strategiesOrder.map((stKey) => {
+                  const st = data.strategies[stKey];
+                  const info = STRATEGY_LABELS[stKey];
+                  return (
+                    <tr key={stKey} className="hover:bg-slate-900/40">
+                      <td className="py-3 pr-3 font-sans">
+                        <div className="font-bold text-slate-200">{info.title}</div>
+                        <div className="text-[10px] text-slate-500">{info.subtitle}</div>
+                      </td>
+                      <td className="py-3 px-2 text-right text-slate-200">
+                        {st.grossRevenue.p50.toLocaleString()}g
+                      </td>
+                      <td
+                        className={`py-3 px-2 text-right font-bold ${
+                          st.netProfit.p50 >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                        }`}
+                      >
+                        {st.netProfit.p50 >= 0 ? '+' : ''}
+                        {st.netProfit.p50.toLocaleString()}g
+                      </td>
+                      <td
+                        className={`py-3 px-2 text-right font-bold ${
+                          st.terminalNetWorth.p50 >= 0 ? 'text-amber-300' : 'text-rose-400'
+                        }`}
+                      >
+                        {st.terminalNetWorth.p50.toLocaleString()}g
+                      </td>
+                      <td className="py-3 px-2 text-right text-rose-300">
+                        {st.totalClaimsAndFines.p50.toLocaleString()}g
+                      </td>
+                      <td className="py-3 px-2 text-right">
+                        <span
+                          className={`px-1.5 py-0.5 rounded text-[10px] ${
+                            st.strictBankruptcyRatePct > 0
+                              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                              : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                          }`}
+                        >
+                          {st.strictBankruptcyRatePct}%
+                        </span>
+                      </td>
+                      <td className="py-3 px-2 text-right text-slate-300">
+                        {st.bailoutFloorTriggeredDays.p50}d
+                      </td>
+                      <td className="py-3 px-2 text-right text-slate-300">
+                        {st.normalUnlockRatePct}% (D{st.dayReachedNormal.p50 ?? '—'}) /{' '}
+                        {st.hardUnlockRatePct}% (D{st.dayReachedHard.p50 ?? '—'})
+                      </td>
+                      <td className="py-3 px-2 text-right text-slate-300">
+                        {st.expertCatalystStrictRatePct}% / {st.expertCatalystUiRuleRatePct}%
+                      </td>
+                      <td className="py-3 pl-2 text-right text-sky-300">
+                        {st.partySurvivalRatePct.p50}%
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 2: DISTRIBUTIONS & PERCENTILES */}
+      {activeSubTab === 'DISTRIBUTIONS' && (
+        <div className="space-y-6">
+          {strategiesOrder.map((stKey) => {
+            const st = data.strategies[stKey];
+            const info = STRATEGY_LABELS[stKey];
+            const metricsList = [
+              { label: 'Gross Revenue (g)', obj: st.grossRevenue },
+              { label: 'Total COGS (g)', obj: st.totalCogs },
+              { label: 'Total Overhead (g)', obj: st.totalOverhead },
+              { label: 'Claims & Fines (g)', obj: st.totalClaimsAndFines },
+              { label: 'Loan Interest Paid (g)', obj: st.totalInterestPaid },
+              { label: 'Net Profit (g)', obj: st.netProfit },
+              { label: 'Terminal Net Worth (g)', obj: st.terminalNetWorth },
+              { label: 'Min Raw Cash Before Floor (g)', obj: st.minRawCashBeforeFloor },
+              { label: 'Dungeon Master Trust (0-100)', obj: st.masterAvgTrust },
+              { label: 'Hero Party Trust (0-100)', obj: st.heroAvgTrust },
+              { label: 'Party Survival Rate (%)', obj: st.partySurvivalRatePct },
+              { label: 'Traps Triggered (Rooms)', obj: st.trapTriggeredCount },
+              { label: 'Mass Pressure Bypasses (Rooms)', obj: st.trapBypassedMassCount },
+              { label: 'Sulphur Reaction Failures', obj: st.reactionFailureSulphurCount }
+            ];
+
+            return (
+              <div
+                key={stKey}
+                className="bg-[#131822] border border-slate-800 rounded-xl p-5 overflow-x-auto"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2 pb-3 mb-3 border-b border-slate-800">
+                  <div>
+                    <h3 className="font-display text-base font-bold text-slate-100">
+                      {info.title}
+                    </h3>
+                    <p className="text-xs text-slate-400">{info.subtitle}</p>
+                  </div>
+                  <div className="text-xs font-mono text-slate-400">
+                    1,000 Campaigns • Normal: {st.normalUnlockRatePct}% • Hard:{' '}
+                    {st.hardUnlockRatePct}% • Expert: {st.expertCatalystStrictRatePct}%
+                  </div>
+                </div>
+
+                <table className="w-full text-left border-collapse text-xs font-mono">
+                  <thead>
+                    <tr className="border-b border-slate-800 text-slate-400 text-[10px] uppercase">
+                      <th className="py-2 pr-3">Metric</th>
+                      <th className="py-2 px-2 text-right">Mean</th>
+                      <th className="py-2 px-2 text-right">Min</th>
+                      <th className="py-2 px-2 text-right">P10</th>
+                      <th className="py-2 px-2 text-right">P25</th>
+                      <th className="py-2 px-2 text-right text-amber-300">Median (P50)</th>
+                      <th className="py-2 px-2 text-right">P75</th>
+                      <th className="py-2 px-2 text-right">P90</th>
+                      <th className="py-2 pl-2 text-right">Max</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/50">
+                    {metricsList.map((m) => (
+                      <tr key={m.label} className="hover:bg-slate-900/30">
+                        <td className="py-2 pr-3 font-sans text-slate-300">{m.label}</td>
+                        <td className="py-2 px-2 text-right text-slate-400">
+                          {m.obj.mean?.toLocaleString() ?? '—'}
+                        </td>
+                        <td className="py-2 px-2 text-right text-slate-500">
+                          {m.obj.min?.toLocaleString() ?? '—'}
+                        </td>
+                        <td className="py-2 px-2 text-right text-slate-400">
+                          {m.obj.p10?.toLocaleString() ?? '—'}
+                        </td>
+                        <td className="py-2 px-2 text-right text-slate-300">
+                          {m.obj.p25?.toLocaleString() ?? '—'}
+                        </td>
+                        <td className="py-2 px-2 text-right font-bold text-amber-300">
+                          {m.obj.p50?.toLocaleString() ?? '—'}
+                        </td>
+                        <td className="py-2 px-2 text-right text-slate-300">
+                          {m.obj.p75?.toLocaleString() ?? '—'}
+                        </td>
+                        <td className="py-2 px-2 text-right text-slate-400">
+                          {m.obj.p90?.toLocaleString() ?? '—'}
+                        </td>
+                        <td className="py-2 pl-2 text-right text-slate-500">
+                          {m.obj.max?.toLocaleString() ?? '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* TAB 3: ADVERSARIAL SUITE */}
+      {activeSubTab === 'ADVERSARIAL' && (
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-4 bg-[#131822] border border-slate-800 rounded-xl p-4">
+            <div>
+              <h3 className="font-display text-base font-bold text-slate-100">
+                Codex Acceptance (`F01–F08`) & Adversarial Regression Suite (`ADV-01–08`)
+              </h3>
+              <p className="text-xs text-slate-400">
+                Proves expedition targeting fidelity, canonical recipe composition identity, Hard-mode Catalyst gating, general physics rules, and byte-identical deterministic replay.
+              </p>
+            </div>
+            <button
+              onClick={handleRunLiveAdversarial}
+              className="px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs font-mono transition-colors cursor-pointer"
+            >
+              Re-Execute Live Regression Suite in Browser
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4">
+            {displayedAdversarial.map((test) => (
+              <div
+                key={test.testId}
+                className="bg-[#131822] border border-slate-800 rounded-xl p-5 flex flex-col gap-2"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2.5">
+                    <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono text-xs font-bold">
+                      {test.testId}
+                    </span>
+                    <span className="text-xs font-mono text-slate-400 uppercase">
+                      [{test.category}]
+                    </span>
+                    <h4 className="font-display text-sm font-bold text-slate-100">{test.name}</h4>
+                  </div>
+                  <span
+                    className={`px-2.5 py-0.5 rounded text-xs font-mono font-bold border ${
+                      test.status === 'PASS'
+                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                        : (test.status as string) === 'EXPLOIT_CONFIRMED'
+                        ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                        : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                    }`}
+                  >
+                    {test.status}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300 leading-relaxed">{test.finding}</p>
+                <div className="text-[11px] font-mono text-slate-400 bg-slate-950/70 border border-slate-800/80 rounded p-2.5 mt-1">
+                  <span className="text-slate-500 uppercase mr-2">Reproduction:</span>
+                  {test.reproductionSteps}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* TAB 4: INTERACTIVE HEADLESS SANDBOX */}
+      {activeSubTab === 'SANDBOX' && (
+        <div className="space-y-6">
+          <div className="bg-[#131822] border border-slate-800 rounded-xl p-5">
+            <h3 className="font-display text-base font-bold text-slate-100 mb-1">
+              Live Production Simulation Campaign Runner (`v2.0-sim002`)
+            </h3>
+            <p className="text-xs text-slate-400 mb-4">
+              Execute any 120-day seeded campaign directly in your browser using the repaired SIM-002 engine (`src/engine/campaignRunner.ts`).
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+              <div>
+                <label className="block text-[10px] font-mono uppercase text-slate-400 mb-1">
+                  World Seed (Integer)
+                </label>
+                <input
+                  type="number"
+                  value={sandboxSeed}
+                  onChange={(e) => setSandboxSeed(Number(e.target.value) || 20260001)}
+                  className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs font-mono text-slate-100"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-mono uppercase text-slate-400 mb-1">
+                  Automated Merchant Strategy
+                </label>
+                <select
+                  value={sandboxStrategy}
+                  onChange={(e) => setSandboxStrategy(e.target.value as StrategyId)}
+                  className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs font-mono text-slate-100"
+                >
+                  {strategiesOrder.map((st) => (
+                    <option key={st} value={st}>
+                      {STRATEGY_LABELS[st].title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-mono uppercase text-slate-400 mb-1">
+                  Campaign Horizon (Days)
+                </label>
+                <input
+                  type="number"
+                  min={30}
+                  max={365}
+                  value={sandboxDays}
+                  onChange={(e) =>
+                    setSandboxDays(Math.max(30, Math.min(365, Number(e.target.value) || 120)))
+                  }
+                  className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs font-mono text-slate-100"
+                />
+              </div>
+
+              <div>
+                <button
+                  onClick={handleRunLiveSandbox}
+                  className="w-full py-2 px-4 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs font-mono transition-colors cursor-pointer"
+                >
+                  Run {sandboxDays}-Day Campaign Now
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {liveResult && (
+            <div className="bg-[#131822] border border-emerald-500/40 rounded-xl p-5 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-800">
+                <div>
+                  <span className="text-[10px] font-mono uppercase text-emerald-400">
+                    LIVE DETERMINISTIC EXECUTION COMPLETE
+                  </span>
+                  <h4 className="font-display text-base font-bold text-slate-100">
+                    Campaign {liveResult.metrics.campaignId} ({liveResult.metrics.strategy})
+                  </h4>
+                </div>
+                <div className="text-xs font-mono text-slate-400">
+                  Actions Logged: {liveResult.actionLogCount} • Rooms Resolved:{' '}
+                  {liveResult.metrics.totalRoomsSimulated}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono">
+                <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
+                  <div className="text-[10px] text-slate-500">GROSS REVENUE</div>
+                  <div className="text-sm font-bold text-slate-100 mt-0.5">
+                    {liveResult.metrics.grossRevenue.toLocaleString()}g
+                  </div>
+                </div>
+                <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
+                  <div className="text-[10px] text-slate-500">NET PROFIT</div>
+                  <div
+                    className={`text-sm font-bold mt-0.5 ${
+                      liveResult.metrics.netProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                    }`}
+                  >
+                    {liveResult.metrics.netProfit.toLocaleString()}g
+                  </div>
+                </div>
+                <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
+                  <div className="text-[10px] text-slate-500">TERMINAL NET WORTH</div>
+                  <div
+                    className={`text-sm font-bold mt-0.5 ${
+                      liveResult.metrics.terminalNetWorth >= 0 ? 'text-amber-300' : 'text-rose-400'
+                    }`}
+                  >
+                    {liveResult.metrics.terminalNetWorth.toLocaleString()}g
+                  </div>
+                </div>
+                <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
+                  <div className="text-[10px] text-slate-500">BAILOUT FLOOR DAYS</div>
+                  <div className="text-sm font-bold text-emerald-400 mt-0.5">
+                    {liveResult.metrics.bailoutFloorTriggeredDays} days (Min Cash:{' '}
+                    {liveResult.metrics.minRawCashBeforeFloor}g)
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="p-3.5 rounded-lg bg-slate-950 border border-slate-800">
+                  <div className="text-[10px] font-mono uppercase text-slate-400 mb-2">
+                    Milestone & Tactical Summary
+                  </div>
+                  <ul className="space-y-1 text-xs font-mono text-slate-300">
+                    <li>• Day Reached Normal: {liveResult.metrics.dayReachedNormal ?? 'Never'}</li>
+                    <li>• Day Reached Hard: {liveResult.metrics.dayReachedHard ?? 'Never'}</li>
+                    <li>
+                      • Day Reached Expert (Hard-Gated F03):{' '}
+                      {liveResult.metrics.dayReachedExpert ?? 'Never'}
+                    </li>
+                    <li>
+                      • Master / Hero Trust: {liveResult.metrics.masterAvgTrust} /{' '}
+                      {liveResult.metrics.heroAvgTrust}
+                    </li>
+                    <li>
+                      • Traps Triggered / Mass Bypassed / Sulphur Failures:{' '}
+                      {liveResult.metrics.trapTriggeredCount} /{' '}
+                      {liveResult.metrics.trapBypassedMassCount} /{' '}
+                      {liveResult.metrics.reactionFailureSulphurCount}
+                    </li>
+                  </ul>
+                </div>
+
+                <div className="p-3.5 rounded-lg bg-slate-950 border border-slate-800">
+                  <div className="text-[10px] font-mono uppercase text-slate-400 mb-2">
+                    Notable Campaign Chronicles
+                  </div>
+                  <ul className="space-y-1 text-xs font-mono text-slate-300">
+                    {liveResult.metrics.notableStoryLog.map((line, idx) => (
+                      <li key={idx}>• {line}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+==== END FILE src/components/Sim001AuditPanel.tsx ====
+
+==== BEGIN FILE src/index.css BLOB 1bcfe9525a834a0a1df79e5e003865366679ef8c ====
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-display: 'Cinzel', Georgia, serif;
+    --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background-color: #0B0E14;
+    color: #F1F5F9;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  h1, h2, h3, .font-display {
+    font-family: var(--font-display);
+    text-wrap: balance;
+  }
+
+  .font-mono, .tabular-nums {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* Accessible typography scaling (Codex A05, F06) */
+html.font-scale-large, body.font-scale-large, .font-scale-large {
+  font-size: 112%;
+}
+html.font-scale-xlarge, body.font-scale-xlarge, .font-scale-xlarge {
+  font-size: 125%;
+}
+
+.font-scale-large .text-xs, html.font-scale-large .text-xs, body.font-scale-large .text-xs {
+  font-size: 0.825rem !important;
+  line-height: 1.15rem !important;
+}
+.font-scale-large .text-sm, html.font-scale-large .text-sm, body.font-scale-large .text-sm {
+  font-size: 0.98rem !important;
+  line-height: 1.35rem !important;
+}
+.font-scale-xlarge .text-xs, html.font-scale-xlarge .text-xs, body.font-scale-xlarge .text-xs {
+  font-size: 0.925rem !important;
+  line-height: 1.3rem !important;
+}
+.font-scale-xlarge .text-sm, html.font-scale-xlarge .text-sm, body.font-scale-xlarge .text-sm {
+  font-size: 1.125rem !important;
+  line-height: 1.5rem !important;
+}
+.font-scale-xlarge .text-base, html.font-scale-xlarge .text-base, body.font-scale-xlarge .text-base {
+  font-size: 1.25rem !important;
+  line-height: 1.65rem !important;
+}
+
+/* Custom subtle scrollbars for ledger panels */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0B0E14;
+}
+::-webkit-scrollbar-thumb {
+  background: #1E293B;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #334155;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Portrait layout must wrap at accessibility sizes, rather than hiding controls offscreen. */
+main { min-width: 0; overflow-x: hidden; }
+main select, main input, main textarea { max-width: 100%; min-width: 0; }
+main .grid > *, main .flex > * { min-width: 0; }
+@media (max-width: 639px) {
+  main button { white-space: normal; overflow-wrap: anywhere; }
+  main .flex:not(.flex-col) { flex-wrap: wrap; }
+  main .truncate { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
+  main table { display: block; overflow-x: auto; }
+  main .font-mono { overflow-wrap: anywhere; }
+}
+main button { max-width: 100%; }
+
+html.font-scale-large main [class~="text-[11px]"] { font-size: .8rem; line-height: 1.3; }
+html.font-scale-xlarge main [class~="text-[11px]"] { font-size: .85rem; line-height: 1.4; }
+header button { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+
+==== END FILE src/index.css ====
+
+==== BEGIN FILE src/main.tsx BLOB 704281f13106944863753669472f960e6244332b ====
+import { createRoot } from 'react-dom/client';
+import { registerSW } from 'virtual:pwa-register';
+import App from './App.tsx';
+import './index.css';
+
+// Register service worker for offline cold-start reopening (F08)
+registerSW({ immediate: true });
+
+createRoot(document.getElementById('root')!).render(<App />);
+
+==== END FILE src/main.tsx ====
+
+==== BEGIN FILE src/utils/sound.ts BLOB 78007073304f450a92bc29041686faec0137f49b ====
+// Procedural Web Audio Synthesizer for Trap & Tonic: Conflict of Interest
+class SoundEngine {
+  private ctx: AudioContext | null = null;
+  public muted: boolean = false;
+
+  private getContext(): AudioContext | null {
+    if (this.muted || typeof window === 'undefined') return null;
+    if (!this.ctx) {
+      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      if (AudioCtx) {
+        this.ctx = new AudioCtx();
+      }
+    }
+    if (this.ctx && this.ctx.state === 'suspended') {
+      this.ctx.resume().catch(() => {});
+    }
+    return this.ctx;
+  }
+
+  public playCoin(): void {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(1180, now);
+    osc.frequency.setValueAtTime(1580, now + 0.055);
+    gain.gain.setValueAtTime(0.14, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.24);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.25);
+  }
+
+  public playBrew(): void {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    [320, 440, 587].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, now + i * 0.045);
+      osc.frequency.exponentialRampToValueAtTime(freq * 1.15, now + i * 0.045 + 0.14);
+      gain.gain.setValueAtTime(0.11, now + i * 0.045);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.045 + 0.16);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now + i * 0.045);
+      osc.stop(now + i * 0.045 + 0.17);
+    });
+  }
+
+  public playRatchet(): void {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(210, now);
+    osc.frequency.setValueAtTime(140, now + 0.04);
+    gain.gain.setValueAtTime(0.15, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.11);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.12);
+  }
+
+  public playImpact(heavy: boolean = false): void {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = heavy ? 'sawtooth' : 'square';
+    osc.frequency.setValueAtTime(heavy ? 110 : 190, now);
+    osc.frequency.exponentialRampToValueAtTime(32, now + (heavy ? 0.24 : 0.12));
+    gain.gain.setValueAtTime(heavy ? 0.22 : 0.12, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + (heavy ? 0.25 : 0.13));
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + (heavy ? 0.26 : 0.14));
+  }
+
+  public playReactionFizz(): void {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(640, now);
+    osc.frequency.linearRampToValueAtTime(240, now + 0.22);
+    gain.gain.setValueAtTime(0.12, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.23);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.24);
+  }
+
+  public playCatalystChord(): void {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    [220, 277.18, 329.63, 440, 659.25].forEach((freq, idx) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, now + idx * 0.03);
+      gain.gain.setValueAtTime(0.09, now + idx * 0.03);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.85);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now + idx * 0.03);
+      osc.stop(now + 0.86);
+    });
+  }
+}
+
+export const soundFX = new SoundEngine();
+
+==== END FILE src/utils/sound.ts ====
