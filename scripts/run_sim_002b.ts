@@ -10,7 +10,7 @@ import { validateSavePayload } from '../src/engine/saveManager';
 const out=process.env.CAMPAIGN_DIR ?? 'artifacts/sim002b/campaigns';
 assert(!fs.existsSync(path.join(out,'campaign_results.csv')),'Existing evidence must not be overwritten');fs.mkdirSync(out,{recursive:true});
 const git=(...args:string[])=>execFileSync('git',args,{encoding:'utf8'}).trim();
-assert.equal(git('diff','--name-only','c45f33e','--','sim_001_archive','public/sim_001'),'','Frozen SIM-001 changed');
+assert.equal(git('diff','--name-only','c45f33e143f71acd7a66edacf773161fb4b9416f','--','sim_001_archive','public/sim_001'),'','Frozen SIM-001 changed');
 const sourceCommit=git('rev-parse','HEAD'),sourceTree=git('rev-parse','HEAD^{tree}');
 const strategies: StrategyId[]=['BALANCED_MERCHANT','DUNGEON_LOYALIST','HERO_BENEFACTOR','ALCHEMICAL_INDUSTRIALIST','PREDATORY_CAPITALIST'];
 const metrics:CampaignMetrics[]=[];const sampleEvents:any[]=[];const sampleActions:any[]=[];
