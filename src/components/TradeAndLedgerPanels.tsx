@@ -1,3 +1,4 @@
+import { getDailyMarketContext } from '../engine/marketContext';
 import React, { useState, useEffect } from 'react';
 import {
   CraftedProduct,
@@ -158,7 +159,7 @@ export const TradeFloorPanel: React.FC<TradeFloorProps> = ({
       <div className="bg-[#131822] border border-slate-800 rounded-xl p-4 flex flex-wrap items-center justify-between gap-4">
         <div>
           <h2 className="font-display text-base font-bold text-slate-100">
-            Bilateral Contract Terms · Day {day}
+            Bilateral Contract Terms · Day {day} · Market ×{getDailyMarketContext(seed, day, activeRegion).factor.toFixed(3)}
           </h2>
           <p className="text-xs text-slate-400">
             Supply {activeMaster.name} on the left and {activeParty.name} on the right before resolving their encounter.
@@ -201,7 +202,7 @@ export const TradeFloorPanel: React.FC<TradeFloorProps> = ({
               onChange={(e) => updateTerms(pricePct, warranty, e.target.checked, secretMark)}
               className="accent-amber-500"
             />
-            <span>Exclusivity (+25% Price)</span>
+            <span>Exclusivity (+22% Price)</span>
           </label>
 
           <label className="flex items-center gap-1.5 text-slate-300 cursor-pointer">

@@ -1,3 +1,4 @@
+import { getDailyMarketContext } from './marketContext';
 import {
   GameSaveState,
   RegionId,
@@ -42,6 +43,13 @@ export type StrategyId =
   | 'HERO_BENEFACTOR'
   | 'ALCHEMICAL_INDUSTRIALIST'
   | 'PREDATORY_CAPITALIST';
+
+export interface TradeEvent {
+  before: GameSaveState;
+  buyerType: 'MASTER' | 'HERO'; buyerId: string; productId: string;
+  terms: { priceMultiplier: number; warrantyBacked: boolean; exclusiveDeal: boolean; secretProvenance: boolean };
+  result: import('./economyEngine').TransactionResult;
+}
 
 export interface CampaignMetrics {
   campaignId: string;
@@ -107,80 +115,8 @@ export interface EconomyEventLogEntry {
   netWorthAfter: number;
 }
 
-function buildInitialScheduledMatchups(): Record<RegionId, ScheduledMatchup> {
-  const result = {} as Record<RegionId, ScheduledMatchup>;
-  (['cellar', 'warrens', 'blackspire', 'vault'] as const).forEach((reg) => {
-    const m = INITIAL_MASTERS.find((x) => x.region === reg) || INITIAL_MASTERS[0];
-    const p = INITIAL_PARTIES.find((x) => x.region === reg) || INITIAL_PARTIES[0];
-    result[reg] = { masterId: m.id, partyId: p.id };
-  });
-  return result;
-}
-
-export function createBaselineState(seed: number): GameSaveState {
-  const initReagents: Record<string, number> = {};
-  REAGENTS_CATALOG.slice(0, 20).forEach((r) => {
-    initReagents[r.id] = 3;
-  });
-  const initParts: Record<string, number> = {};
-  TRAP_PARTS_CATALOG.slice(0, 20).forEach((p) => {
-    initParts[p.id] = 2;
-  });
-
-  return {
-    version: '2.0.0-sim002',
-    seed,
-    day: 1,
-    phase: 'MORNING',
-    activeRegion: 'cellar',
-    unlockedRegions: ['cellar'],
-    gold: 1850,
-    debt: 0,
-    skillPoints: 2,
-    customBrewsCount: 0,
-    customTrapsCount: 0,
-    scheduledMatchups: buildInitialScheduledMatchups(),
-    reagentInventory: initReagents,
-    partInventory: initParts,
-    products: INITIAL_PRODUCTS.map((p) => {
-      const kind = p.category === 'TRAP_MASTER' || p.category === 'HAZARD_MONSTER' ? 'trp' : 'alc';
-      return {
-        ...p,
-        formulaSignature: computeCanonicalFormulaSignature(kind, p.recipeComponents, [], SIM_RULES_VERSION),
-        rulesVersion: SIM_RULES_VERSION,
-        appliedSkills: [],
-        counterClasses: [...p.counterClasses],
-        recipeComponents: [...p.recipeComponents],
-        reactionNotes: [...p.reactionNotes]
-      };
-    }),
-    masters: INITIAL_MASTERS.map((m) => ({
-      ...m,
-      knownHeroCounters: [...m.knownHeroCounters],
-      installedHazards: [...m.installedHazards],
-      memoryLog: [...m.memoryLog]
-    })),
-    parties: INITIAL_PARTIES.map((p) => ({
-      ...p,
-      members: p.members.map((mem) => ({ ...mem })),
-      observedTraps: [...p.observedTraps],
-      equippedProducts: [...p.equippedProducts],
-      memoryLog: [...p.memoryLog]
-    })),
-    rivals: INITIAL_RIVALS.map((r) => ({ ...r })),
-    contractsToday: [],
-    contractHistory: [],
-    intelFeed: INITIAL_INTEL_FEED.map((i) => ({ ...i })),
-    expeditionReports: [],
-    financialLedger: [],
-    catalystLedger: [],
-    expertUnlocked: false,
-    skills: SKILL_TREE_NODES.map((s) => ({ ...s })),
-    basiliskChainStage: 1,
-    blackspireResolution: 'NONE',
-    insolvencyEvents: 0
-  };
-}
+export { createInitialSaveState as createBaselineState } from './initialState';
+import { createInitialSaveState as createBaselineState } from './initialState';
 
 /**
  * Runs a single 120-day campaign using the exact SIM-002 production simulation functions
@@ -190,7 +126,8 @@ export function runSingleCampaign(
   seed: number,
   strategy: StrategyId,
   horizonDays: number = 120,
-  recordEvents: boolean = false
+  recordEvents: boolean = false,
+  onTrade?: (event: TradeEvent) => void
 ): { metrics: CampaignMetrics; events: EconomyEventLogEntry[]; actionLog: string[]; finalState: GameSaveState } {
   let state = createBaselineState(seed);
   const campaignId = `${strategy.slice(0, 4)}_S${seed}`;
@@ -298,7 +235,7 @@ export function runSingleCampaign(
 
     // 2. Charter Progression & Debt Management (organic working-capital gating)
     const cheapCredit = hasSkill('cheap_credit');
-    const marketSentiment = 0.85 + dayRng.next() * 0.37;
+
     if (!state.unlockedRegions.includes('warrens') && d >= 4) {
       const minDown = Math.round(warrensCharterCost * (cheapCredit ? 0.22 : 0.32));
       const reserveNeeded =
@@ -657,15 +594,6 @@ export function runSingleCampaign(
     let activeMaster = schedule.currentMaster;
     let activeParty = schedule.currentParty;
 
-    // For Dungeon Loyalist, strip default hero antidotes when heroes run out of supplies
-    if (strategy === 'DUNGEON_LOYALIST' && d > 3) {
-      activeParty.equippedProducts = ['prod_antidote_unstabilised'];
-    }
-    // For Hero Benefactor & Alchemical Industrialist, Masters rely on standard 45kg pressure plates unless supplied
-    if ((strategy === 'HERO_BENEFACTOR' || strategy === 'ALCHEMICAL_INDUSTRIALIST') && d > 2) {
-      activeMaster.installedHazards = ['prod_trap_plate_spikes'];
-    }
-
     const bilateralSkill = hasSkill('bilateral_margin');
     const secretSkill = hasSkill('secret_shipping');
     const paradoxAlchemy = hasSkill('paradox_alchemy');
@@ -691,26 +619,12 @@ export function runSingleCampaign(
         strategy === 'ALCHEMICAL_INDUSTRIALIST' ||
         (strategy === 'PREDATORY_CAPITALIST' && d % 3 === 0));
 
-    const baseMultiplier =
-      (pricePct / 100) *
-      (warranty ? 1.12 : 1) *
-      (exclusive ? 1.22 : 1) *
-      (bilateralSkill ? 1.1 : 1) *
-      marketSentiment;
-
     // Sell to Dungeon Master?
     const shouldSellToMaster =
       strategy === 'BALANCED_MERCHANT' ||
       strategy === 'DUNGEON_LOYALIST' ||
       strategy === 'PREDATORY_CAPITALIST' ||
       (strategy === 'ALCHEMICAL_INDUSTRIALIST' && d % 2 === 0);
-
-    // Low-trust customer boycott check (Predatory gouging/double-dealing consequence)
-    const masterBoycottsToday =
-      activeMaster.trust < 50 && dayRng.next() < (54 - activeMaster.trust) * 0.016;
-    if (masterBoycottsToday) {
-      masterChurnCount += 1;
-    }
 
     if (shouldSellToMaster) {
       const masterOptions = state.products.filter(
@@ -731,13 +645,16 @@ export function runSingleCampaign(
         let salesMade = 0;
         for (const prod of sorted) {
           if (prod.stock > 0 && salesMade < maxMasterSalesToday) {
+            const beforeTrade = onTrade ? structuredClone(state) : undefined;
             const tx = executeCommercialTransaction(state, 'MASTER', activeMaster.id, prod, {
               priceMultiplier: pricePct / 100,
               warrantyBacked: warranty,
               exclusiveDeal: exclusive,
-              secretProvenance: secretMark,
-              marketSentiment
+              secretProvenance: secretMark
             });
+            if (onTrade) onTrade({ before: beforeTrade!, buyerType: 'MASTER', buyerId: activeMaster.id, productId: prod.id,
+              terms: { priceMultiplier: pricePct / 100, warrantyBacked: warranty, exclusiveDeal: exclusive, secretProvenance: secretMark },
+              result: structuredClone(tx) });
             if (tx.success && tx.nextState) {
               state = tx.nextState;
               activeMaster = state.masters.find((m) => m.id === activeMaster.id)!;
@@ -783,13 +700,16 @@ export function runSingleCampaign(
         let salesMade = 0;
         for (const prod of sorted) {
           if (prod.stock > 0 && salesMade < maxHeroSalesToday) {
+            const beforeTrade = onTrade ? structuredClone(state) : undefined;
             const tx = executeCommercialTransaction(state, 'HERO', activeParty.id, prod, {
               priceMultiplier: pricePct / 100,
               warrantyBacked: warranty,
               exclusiveDeal: exclusive,
-              secretProvenance: secretMark,
-              marketSentiment
+              secretProvenance: secretMark
             });
+            if (onTrade) onTrade({ before: beforeTrade!, buyerType: 'HERO', buyerId: activeParty.id, productId: prod.id,
+              terms: { priceMultiplier: pricePct / 100, warrantyBacked: warranty, exclusiveDeal: exclusive, secretProvenance: secretMark },
+              result: structuredClone(tx) });
             if (tx.success && tx.nextState) {
               state = tx.nextState;
               activeParty = state.parties.find((p) => p.id === activeParty.id)!;
@@ -941,6 +861,13 @@ export function runSingleCampaign(
         }
       }
     }
+
+    const inventoryValue = state.products.reduce((sum,p) => sum + p.stock*p.productionCost,0);
+    state.financialLedger.unshift({ day:d, grossRevenue:dayRev, cogs:dayCogs, grossMargin:dayRev-dayCogs,
+      overheadAndStorage:dayOverhead, warrantyAndClaims:dayClaims, finesAndBribes:dayFines,
+      financingInterest:dayInterest, netProfit:dayRev-dayCogs-dayOverhead-dayClaims-dayFines-dayInterest,
+      endingCash:state.gold, inventoryValue, debt:state.debt, netWorth:state.gold+inventoryValue-state.debt,
+      marketContext:getDailyMarketContext(state.seed,d,state.activeRegion,state.rulesVersion) });
 
     state.skillPoints += 1;
     state.contractsToday = [];

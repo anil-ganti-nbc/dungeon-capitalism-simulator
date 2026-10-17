@@ -1,3 +1,4 @@
+import { getDailyMarketContext } from './engine/marketContext';
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   GameShellState,
@@ -48,7 +49,8 @@ import {
 import { PWAInstallButton, OfflineIndicator } from './components/PWAInstallWidgets';
 import {
   createInitialSaveState,
-  normalizeLoadedSave,
+  validateSavePayload,
+  quarantinePayload,
   loadGameWithRecovery,
   persistAtomicSaveSafe,
   SAVE_STORAGE_KEY,
@@ -90,13 +92,16 @@ export default function App() {
     audioMuted: false
   });
 
-  const [gameState, setGameState] = useState<GameSaveState>(() => {
-    return loadGameWithRecovery(localStorage).state;
-  });
+  const [loaded] = useState(() => loadGameWithRecovery(localStorage));
+  const [recoveryNotice, setRecoveryNotice] = useState(loaded.notice);
+  const saveBlocked = React.useRef(!!loaded.writeBlocked);
+  const [gameState, setGameState] = useState<GameSaveState>(loaded.state);
 
   // Atomic save rotation on state update & app lifecycle interruption (F08, A02)
   const persistAtomicSave = useCallback((stateToSave: GameSaveState) => {
-    persistAtomicSaveSafe(stateToSave, localStorage);
+    if (!saveBlocked.current && !persistAtomicSaveSafe(stateToSave, localStorage)) {
+      setRecoveryNotice('Save failed validation or storage is full. Existing checkpoints preserved; export your ledger.');
+    }
   }, []);
 
   useEffect(() => {
@@ -518,6 +523,7 @@ export default function App() {
             financingInterest: interest,
             netProfit,
             endingCash,
+          marketContext: getDailyMarketContext(prev.seed, prev.day, prev.activeRegion, prev.rulesVersion),
             inventoryValue: inventoryVal,
             debt: nextDebt,
             netWorth
@@ -768,6 +774,8 @@ export default function App() {
           onResetSave={() => {
             const fresh = createInitialSaveState();
             setGameState(fresh);
+            saveBlocked.current = false;
+            setRecoveryNotice(undefined);
             persistAtomicSave(fresh);
           }}
         />
@@ -820,6 +828,7 @@ export default function App() {
       </header>
 
       {/* Main Scrollable Game Shell Container (Supports One-Thumb Portrait Mode or Full 1440px Desktop) */}
+      {recoveryNotice && <div role="alert" className="px-4 py-3 text-sm text-amber-200 bg-amber-950 border border-amber-700 break-words">{recoveryNotice}</div>}
       <main
         className={`flex-1 overflow-y-auto overflow-x-hidden max-w-full px-4 sm:px-6 pt-4 pb-24 lg:pb-6 space-y-5 ${
           a11y.oneThumbPortraitMode ? 'max-w-md mx-auto w-full border-x border-slate-800 pb-28' : 'max-w-[1440px] mx-auto w-full'
@@ -1188,18 +1197,17 @@ export default function App() {
             onImportPeerCatalyst={handleImportPeerCatalyst}
             onExportSaveJson={() => JSON.stringify(gameState)}
             onImportSaveJson={(jsonStr) => {
-              try {
-                const parsed = JSON.parse(jsonStr) as Partial<GameSaveState>;
-                if (parsed && typeof parsed.day === 'number' && Array.isArray(parsed.products)) {
-                  const hydrated = normalizeLoadedSave(parsed);
-                  setGameState(hydrated);
-                  persistAtomicSave(hydrated);
-                  return true;
-                }
-              } catch {
+              const check = validateSavePayload(jsonStr);
+              if (!check.valid || !check.state) {
+                try { quarantinePayload(localStorage, jsonStr); } catch { /* preserve checkpoints even when quota is full */ }
+                setRecoveryNotice(`Import refused: ${check.error}. Current campaign unchanged.`);
                 return false;
               }
-              return false;
+              if (!persistAtomicSaveSafe(check.state, localStorage)) return false;
+              saveBlocked.current = false;
+              setGameState(check.state);
+              setRecoveryNotice(`Imported validated ledger: Day ${check.state.day}.`);
+              return true;
             }}
           />
         )}

@@ -176,7 +176,17 @@ export interface MarketFactOrRumour {
   resolved?: boolean;
 }
 
+export interface DailyMarketContext {
+  version: 'market-v1';
+  rulesVersion: string;
+  seed: number;
+  day: number;
+  region: RegionId;
+  factor: number;
+}
+
 export interface SaleContract {
+  marketContext?: DailyMarketContext;
   id: string;
   day: number;
   buyerType: 'MASTER' | 'HERO';
@@ -238,6 +248,7 @@ export interface ExpeditionReport {
 }
 
 export interface FinancialRecord {
+  marketContext?: DailyMarketContext;
   day: number;
   grossRevenue: number;
   cogs: number;

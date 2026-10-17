@@ -1,3 +1,4 @@
+import { getDailyMarketContext } from './marketContext';
 import {
   GameSaveState,
   CraftedProduct,
@@ -17,7 +18,7 @@ export interface QuotationOptions {
   day: number;
   seed: number;
   unlockedSkills?: string[];
-  marketSentiment?: number;
+  rulesVersion?: string;
 }
 
 export interface QuotationResult {
@@ -71,7 +72,7 @@ export function computeQuotation(
   options: QuotationOptions
 ): QuotationResult {
   const priceMultiplier = options.priceMultiplier ?? 1.0;
-  const marketSentiment = options.marketSentiment ?? 1.0;
+  const marketSentiment = getDailyMarketContext(options.seed, options.day, buyer.region, options.rulesVersion).factor;
   const skills = options.unlockedSkills ?? [];
   const hasSkill = (k: string) => skills.includes(k);
 
@@ -169,7 +170,7 @@ export function executeCommercialTransaction(
     warrantyBacked: boolean;
     exclusiveDeal: boolean;
     secretProvenance: boolean;
-    marketSentiment?: number;
+    rulesVersion?: string;
   }
 ): TransactionResult {
   // 1. Strict validation: check current authoritative product stock (Gate 3)
@@ -202,9 +203,18 @@ export function executeCommercialTransaction(
   if (
     buyer.region &&
     buyer.region !== prevState.activeRegion &&
-    !prevState.unlockedRegions.includes(buyer.region as any)
+    true
   ) {
-    return { success: false, reason: 'Buyer is located in an inaccessible locked region.' };
+    return { success: false, reason: 'Trading is regional: select the buyer’s unlocked region before selling.' };
+  }
+
+  const loadout = buyerType === 'MASTER'
+    ? (buyer as DungeonMaster).installedHazards : (buyer as AdventuringParty).equippedProducts;
+  const capacity = buyerType === 'MASTER' ? 3 : 4;
+  if (loadout.length >= capacity) return { success: false,
+    reason: `Loadout full (${loadout.length}/${capacity}). Use existing supplies before purchasing another unit.` };
+  if (!prevState.unlockedRegions.includes(prevState.activeRegion)) {
+    return { success: false, reason: 'Active trading region is locked.' };
   }
 
   const skills = prevState.skills.filter((s) => s.unlocked).map((s) => s.effectKey);
@@ -216,7 +226,7 @@ export function executeCommercialTransaction(
     day: prevState.day,
     seed: prevState.seed,
     unlockedSkills: skills,
-    marketSentiment: terms.marketSentiment
+    rulesVersion: prevState.rulesVersion
   });
 
   if (!quotation.acceptable) {
@@ -226,6 +236,7 @@ export function executeCommercialTransaction(
   const unitPrice = quotation.unitPrice;
   const contractSeq = prevState.contractHistory.length + 1;
   const newContract: SaleContract = {
+    marketContext: getDailyMarketContext(prevState.seed, prevState.day, prevState.activeRegion, prevState.rulesVersion),
     id: `cnt_d${prevState.day}_n${contractSeq}_${currentProduct.id}`,
     day: prevState.day,
     buyerType,
@@ -255,7 +266,7 @@ export function executeCommercialTransaction(
         ...m,
         budget: Math.max(0, m.budget - unitPrice),
         trust: Math.max(10, Math.min(100, m.trust + quotation.expectedTrustDelta)),
-        installedHazards: [currentProduct.id, ...m.installedHazards.filter((h) => h !== currentProduct.id)].slice(0, 3),
+        installedHazards: [currentProduct.id, ...m.installedHazards],
         memoryLog: [
           ...m.memoryLog,
           `Day ${prevState.day}: Purchased ${currentProduct.name} [#${currentProduct.formulaSignature || currentProduct.id.slice(-6)}] for ${unitPrice}g.`
@@ -273,7 +284,7 @@ export function executeCommercialTransaction(
         ...p,
         budget: Math.max(0, p.budget - unitPrice),
         trust: Math.max(10, Math.min(100, p.trust + quotation.expectedTrustDelta)),
-        equippedProducts: [currentProduct.id, ...p.equippedProducts].slice(0, 4),
+        equippedProducts: [currentProduct.id, ...p.equippedProducts],
         memoryLog: [
           ...p.memoryLog,
           `Day ${prevState.day}: Purchased ${currentProduct.name} [#${currentProduct.formulaSignature || currentProduct.id.slice(-6)}] for ${unitPrice}g.`
