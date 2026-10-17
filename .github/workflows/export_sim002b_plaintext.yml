@@ -1,0 +1,27 @@
+name: Export SIM-002B plaintext QA attachments
+on:
+  push:
+    branches:
+      - review/sim002b-plaintext-export
+permissions:
+  contents: read
+jobs:
+  export-plaintext:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout review-only branch
+        uses: actions/checkout@v4
+      - name: Verify pinned source export is present
+        run: |
+          test -s qa_plaintext/00_SIM002B_SOURCE_ALL_UNCOMPRESSED.txt
+          test -s qa_plaintext/06_PR_SOURCE_PATCH.txt
+          grep -q '6722ac6edd8ed37633db56804517c859a58829df' qa_plaintext/00_SIM002B_SOURCE_ALL_UNCOMPRESSED.txt
+      - name: Upload transfer files
+        uses: actions/upload-artifact@v4
+        with:
+          name: sim002b-argon-plain-source
+          path: |
+            qa_plaintext/00_SIM002B_SOURCE_ALL_UNCOMPRESSED.txt
+            qa_plaintext/06_PR_SOURCE_PATCH.txt
+          retention-days: 2
+          if-no-files-found: error
