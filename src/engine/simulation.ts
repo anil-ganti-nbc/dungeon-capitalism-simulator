@@ -16,6 +16,15 @@ import { DeterministicRNG, hashString } from '../utils/prng';
 
 export const SIM_RULES_VERSION = 'v2.0-sim002';
 
+/** Shared workshop/live predicate; inversion sensors detect only featherweight intruders. */
+export function isMassInversionPlate(hazard: CraftedProduct): boolean {
+  return hazard.recipeComponents.includes('part_trg_12');
+}
+export function isTrapTriggeredByMass(hazard: CraftedProduct, massKg: number): boolean {
+  return isMassInversionPlate(hazard) ? massKg < 25
+    : hazard.triggerMassThresholdKg <= 0 || massKg >= hazard.triggerMassThresholdKg;
+}
+
 export function computeCanonicalFormulaSignature(
   kind: 'alc' | 'trp',
   componentIds: string[],
@@ -265,11 +274,14 @@ export function assembleTrapProduct(
   const reactionNotes: string[] = [
     `Trigger Mass Threshold: ${massThreshold > 0 ? `${massThreshold}kg` : '0kg (Non-Mass Sensor)'} · Detection DC ${avgDetection}`
   ];
-  if (massThreshold >= 35) {
+  if (trigger.id === 'part_trg_12') {
+    reactionNotes.push('MASS INVERSION: triggers below 25kg; heavier intruders bypass the sensor.');
+  } else if (massThreshold >= 35) {
     reactionNotes.push(`MASS BYPASS WINDOW: Heroes shrunk below ${massThreshold}kg via Chicken-Morph Draught will not trigger this plate!`);
   } else if (massThreshold > 0 && massThreshold <= 12) {
     reactionNotes.push(`ANTI-MORPH HAIR TRIGGER: ${massThreshold}kg threshold catches even Chicken-Morphed heroes!`);
   }
+  if (reset.id === 'part_rst_09') reactionNotes.push('FINITE TEMPORAL RESET: one charge per paid installation prevents one wear removal; no free replenishment.');
   if (emitsSulphurFog) {
     reactionNotes.push('SULPHUR ATMOSPHERE: Degrades unstabilised hero antidotes by 55% unless filtered.');
   }
@@ -415,40 +427,41 @@ export function simulateRegionExpedition(
     let learnedByMaster = '';
 
     // 1. Check Mass Bypass / Mass-Inversion on Pressure Plate triggers
-    const isMassInversionPlate =
-      hazard.recipeComponents?.includes('part_trg_12') ||
-      hazard.id === 'prod_trp_1561f95a' ||
-      hazard.name.toLowerCase().includes('inversion');
+    const inversion = isMassInversionPlate(hazard);
+    const triggersByMass = isTrapTriggeredByMass(hazard, effectiveMass);
     const hasTemporalRewind =
-      hazard.recipeComponents?.includes('part_rst_09') ||
-      hazard.name.toLowerCase().includes('rewind');
+      hazard.recipeComponents.includes('part_rst_09');
 
-    if (isMassInversionPlate && effectiveMass < 25) {
+    if (inversion && triggersByMass) {
       // Inversion Plate triggers on abnormally light (<25kg) featherweight morphs!
       outcome = 'TRAP_TRIGGERED';
       damageDealt = Math.round(hazard.potency * 0.65) + rng.nextInt(12, 28);
       lootSecured = rng.nextInt(30, 80);
       chemicalReaction = `PARADOX MASS-INVERSION: Inversion sensor detected abnormally light ${effectiveMass}kg intruder (<25kg)! Gravitational polarity inverted and plate detonated!`;
       if (hasTemporalRewind) {
-        chemicalReaction += ` [Temporal Rewind Loop: Restored mechanism to pristine state via closed timelike loop.]`;
+        chemicalReaction += ` [Temporal Rewind Loop: Finite reset module: remaining paid charge is settled against expedition wear.]`;
       }
       causalExplanation = `${party.name} attempted a featherweight ${effectiveMass}kg morph bypass, but ${hazard.name} inverted gravitational polarity and detonated on the lightweight intruder!`;
       learnedByHeroes = `Discovered ${hazard.name} inverts mass physics: featherweight morphs trigger the trap! Demanding anti-arcane disruption.`;
       learnedByMaster = `${master.name}'s Paradox Mass-Inversion Plate successfully caught the featherweight intruders.`;
       doubleSaleDemandCreated.push(`${party.name} seeks anti-arcane countermeasures against Mass Inversion`);
-    } else if (threshold >= 25 && effectiveMass < threshold && morphPotion && !isMassInversionPlate) {
+    } else if (!triggersByMass) {
       outcome = 'TRAP_BYPASSED';
-      heroCounterUsed = morphPotion.name;
-      chemicalReaction = `Mass Rule: ${vanguard.name} (${baseMass}kg) drank ${morphPotion.name} (${morphPotion.massEffectKg}kg) -> ${effectiveMass}kg < ${threshold}kg Plate Threshold!`;
+      heroCounterUsed = morphPotion?.name ?? 'Naturally light vanguard';
+      chemicalReaction = `Mass Rule: ${vanguard.name} (${baseMass}kg) drank ${morphPotion?.name ?? 'natural light mass'} (${morphPotion?.massEffectKg ?? 0}kg) -> ${effectiveMass}kg < ${threshold}kg Plate Threshold!`;
       if (hasTemporalRewind) {
-        chemicalReaction += ` [Temporal Rewind Loop: Mechanism re-cocked instantaneously via closed timelike loop.]`;
+        chemicalReaction += ` [Temporal Rewind Loop: Finite reset module: bypass alone does not consume a reset charge.]`;
       }
       damageDealt = 0;
       lootSecured = rng.nextInt(180, 310);
       causalExplanation = `${party.name} bypassed ${hazard.name} completely because their shrunken ${effectiveMass}kg mass failed to depress the ${threshold}kg pressure plate.`;
-      learnedByHeroes = `Confirmed ${morphPotion.name} bypasses ${threshold}kg plates in ${master.name}'s dungeon.`;
+      if (inversion) {
+        chemicalReaction = `Mass Rule: ${effectiveMass}kg is outside the inversion sensor's under-25kg window.`;
+        causalExplanation = `${party.name} bypassed ${hazard.name}: inversion sensors trigger only below 25kg.`;
+      }
+      learnedByHeroes = `Confirmed ${morphPotion?.name ?? 'natural light mass'} bypasses ${threshold}kg plates in ${master.name}'s dungeon.`;
       learnedByMaster = `${master.name} furious that ${threshold}kg plates were bypassed by lightweight heroes; now demands <10kg Hair-Trigger Quartz traps or Mass-Inversion Plates!`;
-      doubleSaleDemandCreated.push(`${master.name} demands Mass-Inversion Plates to counter ${morphPotion.name}`);
+      doubleSaleDemandCreated.push(`${master.name} demands Mass-Inversion Plates to counter ${morphPotion?.name ?? 'natural light mass'}`);
     }
     // 2. Check Basilisk Petrification + Sulphur Fog Chemical Reaction (The Basilisk Supply Chain!)
     else if (hazard.causesPetrification) {

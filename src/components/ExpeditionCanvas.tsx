@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ExpeditionReport, ExpeditionRoomEvent } from '../types/game';
 import { soundFX } from '../utils/sound';
 
@@ -31,6 +31,14 @@ export const ExpeditionCanvas: React.FC<ExpeditionCanvasProps> = React.memo(({
   reducedMotion,
   onRoomAdvance
 }) => {
+  const [camera, setCamera] = useState({ x:0, y:0 });
+  const cameraRef = useRef(camera);
+  const moveCamera = (x:number,y:number) => {
+    const next = { x:Math.max(-284,Math.min(284,x)), y:Math.max(-50,Math.min(50,y)) };
+    cameraRef.current=next; setCamera(next);
+  };
+  const drag = useRef<{id:number;x:number;y:number} | null>(null);
+  useEffect(() => { moveCamera((1-activeRoomIdx)*284,0); },[activeRoomIdx,report?.id]);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const propsRef = useRef({ mode, report, activeRoomIdx, simSpeed, reducedMotion, onRoomAdvance });
 
@@ -107,8 +115,7 @@ export const ExpeditionCanvas: React.FC<ExpeditionCanvasProps> = React.memo(({
     // Simulation state inside loop
     let animFrameId = 0;
     let lastTime = performance.now();
-    let camPanX = 0;
-    let camPanY = 0;
+
     let shakeIntensity = 0;
     let hitstopTimer = 0;
     let hitFlashAlpha = 0;
@@ -147,10 +154,13 @@ export const ExpeditionCanvas: React.FC<ExpeditionCanvasProps> = React.memo(({
 
       // Continuous WASD camera inspection offset
       const panSpeed = 140 * dt;
-      if (heldKeys.has('KeyA') || heldKeys.has('ArrowLeft')) camPanX = Math.max(-90, camPanX - panSpeed);
-      if (heldKeys.has('KeyD') || heldKeys.has('ArrowRight')) camPanX = Math.min(90, camPanX + panSpeed);
-      if (heldKeys.has('KeyW') || heldKeys.has('ArrowUp')) camPanY = Math.max(-50, camPanY - panSpeed);
-      if (heldKeys.has('KeyS') || heldKeys.has('ArrowDown')) camPanY = Math.min(50, camPanY + panSpeed);
+      let {x:camPanX,y:camPanY}=cameraRef.current;
+      if (heldKeys.has('KeyA') || heldKeys.has('ArrowLeft')) camPanX -= panSpeed;
+      if (heldKeys.has('KeyD') || heldKeys.has('ArrowRight')) camPanX += panSpeed;
+      if (heldKeys.has('KeyW') || heldKeys.has('ArrowUp')) camPanY -= panSpeed;
+      if (heldKeys.has('KeyS') || heldKeys.has('ArrowDown')) camPanY += panSpeed;
+      if (camPanX !== cameraRef.current.x || camPanY !== cameraRef.current.y) moveCamera(camPanX,camPanY);
+      camPanX=cameraRef.current.x; camPanY=cameraRef.current.y;
 
       // Handle brief 30-80ms simulation hitstop on heavy impacts
       if (hitstopTimer > 0) {
@@ -246,7 +256,7 @@ export const ExpeditionCanvas: React.FC<ExpeditionCanvasProps> = React.memo(({
       } else if (curReport) {
         // Render 3-Room Dungeon Cross-Section
         const floorY = height * 0.68;
-        const roomW = Math.min(260, (width - 120) / 3);
+        const roomW = 260;
         const startX = (width - roomW * 3 - 48) / 2;
 
         // Corridor floor
@@ -283,7 +293,7 @@ export const ExpeditionCanvas: React.FC<ExpeditionCanvasProps> = React.memo(({
           // Room Header
           ctx.fillStyle = '#94A3B8';
           ctx.font = '600 11px "JetBrains Mono", monospace';
-          ctx.fillText(`ROOM 0${rm.roomIndex} · ${rm.triggerType}`, rx + 12, ry + 22);
+          ctx.fillText(`ROOM 0${rm.roomIndex} · ${rm.triggerType}`, rx + 12, ry + 22, roomW-24);
 
           // Pressure Plate / Trigger Telegraph on Floor
           const plateX = rx + roomW * 0.55;
@@ -414,11 +424,20 @@ export const ExpeditionCanvas: React.FC<ExpeditionCanvasProps> = React.memo(({
   }, []);
 
   return (
-    <div className="relative w-full h-full overflow-hidden bg-[#0B0E14] touch-pan-y">
+    <div className="relative w-full h-full overflow-hidden bg-[#0B0E14]">
       <canvas
+        aria-label="Dungeon expedition camera. Drag to pan; arrow keys or WASD also pan."
+        tabIndex={mode === 'EXPEDITION_LIVE' ? 0 : -1}
+        data-camera-x={camera.x.toFixed(2)} data-camera-y={camera.y.toFixed(2)}
+        onPointerDown={e => { if (mode !== 'EXPEDITION_LIVE') return; e.currentTarget.setPointerCapture(e.pointerId); drag.current={id:e.pointerId,x:e.clientX,y:e.clientY}; }}
+        onPointerMove={e => { const d=drag.current; if (!d || d.id!==e.pointerId) return;
+          moveCamera(cameraRef.current.x+e.clientX-d.x,cameraRef.current.y+e.clientY-d.y);
+          drag.current={id:e.pointerId,x:e.clientX,y:e.clientY}; }}
+        onPointerUp={() => { drag.current=null; }} onPointerCancel={() => { drag.current=null; }}
+        onLostPointerCapture={() => { drag.current=null; }}
         ref={canvasRef}
-        className="block w-full h-full max-w-full touch-pan-y"
-        style={{ touchAction: 'pan-y' }}
+        className="block w-full h-full max-w-full"
+        style={{ touchAction: mode === 'EXPEDITION_LIVE' ? 'none' : 'pan-y' }}
       />
     </div>
   );

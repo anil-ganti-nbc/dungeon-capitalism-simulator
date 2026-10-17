@@ -121,7 +121,12 @@ export function computeQuotation(
   let acceptable = true;
   let refusalReason: string | undefined;
 
-  if (boycotting) {
+  const capacity = buyerType === 'MASTER' ? 3 : 4;
+  const loadout = buyerType === 'MASTER' ? (buyer as DungeonMaster).installedHazards : (buyer as AdventuringParty).equippedProducts;
+  if (loadout.length >= capacity) {
+    acceptable = false;
+    refusalReason = `Loadout full (${loadout.length}/${capacity}). Use existing supplies before purchasing another unit.`;
+  } else if (boycotting) {
     acceptable = false;
     refusalReason = `Client boycott in effect due to low trust (${buyer.trust}/100).`;
   } else if (!canAfford) {
@@ -201,9 +206,7 @@ export function executeCommercialTransaction(
   }
 
   if (
-    buyer.region &&
-    buyer.region !== prevState.activeRegion &&
-    true
+    buyer.region !== prevState.activeRegion
   ) {
     return { success: false, reason: 'Trading is regional: select the buyer’s unlocked region before selling.' };
   }
@@ -267,6 +270,7 @@ export function executeCommercialTransaction(
         budget: Math.max(0, m.budget - unitPrice),
         trust: Math.max(10, Math.min(100, m.trust + quotation.expectedTrustDelta)),
         installedHazards: [currentProduct.id, ...m.installedHazards],
+        installedResetCharges: [currentProduct.recipeComponents.includes('part_rst_09') ? 1 : 0, ...(m.installedResetCharges ?? m.installedHazards.map(() => 0))],
         memoryLog: [
           ...m.memoryLog,
           `Day ${prevState.day}: Purchased ${currentProduct.name} [#${currentProduct.formulaSignature || currentProduct.id.slice(-6)}] for ${unitPrice}g.`
@@ -296,6 +300,10 @@ export function executeCommercialTransaction(
 
   const nextState: GameSaveState = {
     ...prevState,
+    phase: 'TRADE',
+    scheduledMatchups: { ...prevState.scheduledMatchups, [prevState.activeRegion]: {
+      ...prevState.scheduledMatchups[prevState.activeRegion],
+      ...(buyerType === 'MASTER' ? { masterId:buyerId } : { partyId:buyerId }) } },
     gold: prevState.gold + unitPrice,
     products: nextProducts,
     masters: nextMasters,
@@ -326,6 +334,8 @@ export function resolveConsumableWear(
 ): {
   nextEquipped: string[];
   nextInstalled: string[];
+  nextResetCharges: number[];
+  rewindsSpent: number;
 } {
   const autoResetSkill = skills.includes('auto_reset_cam');
 
@@ -341,18 +351,28 @@ export function resolveConsumableWear(
   // Master trap wear: non-resetting traps exhaust their armed tension / durability
   // unless auto-reset skill or temporal rewind loop is armed
   let nextInstalled = [...master.installedHazards];
+  let nextResetCharges = [...(master.installedResetCharges ?? master.installedHazards.map(() => 0))];
+  let rewindsSpent = 0;
   if (!autoResetSkill) {
     // Every 3 delves (or if warranty claim / breakdown occurred), oldest trap exhausts tension
     if (day % 3 === 0 || warrantyClaimsTriggered > 0) {
       if (nextInstalled.length > 0) {
-        nextInstalled = nextInstalled.slice(1);
+        if ((nextResetCharges[0] ?? 0) > 0) {
+          nextResetCharges[0] -= 1;
+          rewindsSpent = 1;
+        } else {
+          nextInstalled = nextInstalled.slice(1);
+          nextResetCharges = nextResetCharges.slice(1);
+        }
       }
     }
   }
 
   return {
     nextEquipped,
-    nextInstalled
+    nextInstalled,
+    nextResetCharges,
+    rewindsSpent
   };
 }
 

@@ -118,6 +118,7 @@ export interface DungeonMaster {
   visitorTraffic: number;    // 0-100 (too lethal = 0 traffic; too easy = looted treasury)
   trust: number;             // 0-100
   knownHeroCounters: string[];
+  installedResetCharges?: number[]; // Slot-aligned, paid temporal rewinds remaining (0 or 1).
   installedHazards: string[]; // Canonical Product IDs
   memoryLog: string[];
   desiredTrait: string;

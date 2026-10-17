@@ -1,3 +1,4 @@
+import { claimSoloCatalyst } from './engine/progression';
 import { getDailyMarketContext } from './engine/marketContext';
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
@@ -207,6 +208,8 @@ export default function App() {
   // Load "The Basilisk Supply Chain" Scenario (Unlocks Warrens immediately & stages Grimthorn + Silver Stag)
   const handleLoadBasiliskScenario = useCallback(() => {
     const base = createInitialSaveState();
+    saveBlocked.current = false;
+    setRecoveryNotice(undefined);
     base.unlockedRegions = ['cellar', 'warrens'];
     base.activeRegion = 'warrens';
     base.gold = 3400;
@@ -347,24 +350,7 @@ export default function App() {
           } for +${tx.unitPrice}g!`
         );
 
-        // Also ensure buyer is set in scheduledMatchups for their region
-        const currentSched = prev.scheduledMatchups[prev.activeRegion] || {
-          masterId: prev.masters[0].id,
-          partyId: prev.parties[0].id
-        };
-        const updatedRegionSched =
-          buyerType === 'MASTER'
-            ? { ...currentSched, masterId: buyerId }
-            : { ...currentSched, partyId: buyerId };
-
-        return {
-          ...tx.nextState,
-          phase: 'TRADE',
-          scheduledMatchups: {
-            ...tx.nextState.scheduledMatchups,
-            [prev.activeRegion]: updatedRegionSched
-          }
-        };
+        return tx.nextState;
       });
     },
     []
@@ -452,6 +438,7 @@ export default function App() {
             ...m,
             budget: Math.max(450, m.budget + report.masterTreasuryDelta + 320),
             installedHazards: wear.nextInstalled,
+            installedResetCharges: wear.nextResetCharges,
             memoryLog: [...m.memoryLog, `Day ${prev.day} After-Action: ${lastRoom.learnedByMaster}`],
             desiredTrait: report.doubleSaleDemandCreated[0] || m.desiredTrait
           };
@@ -567,41 +554,10 @@ export default function App() {
 
   // F03 Fix: Claim Solo Offline DM Paradox Catalyst (Requires Hard Mode + 2 Custom Brews + 2 Custom Traps + 2 DM & 2 Hero Sales)
   const handleClaimSoloDmCatalyst = useCallback(() => {
-    setGameState((prev) => {
-      const masterSales = prev.contractHistory.filter((c) => c.buyerType === 'MASTER').length;
-      const heroSales = prev.contractHistory.filter((c) => c.buyerType === 'HERO').length;
-      if (
-        !prev.unlockedRegions.includes('blackspire') ||
-        prev.customBrewsCount < 2 ||
-        prev.customTrapsCount < 2 ||
-        masterSales < 2 ||
-        heroSales < 2
-      ) {
-        return prev;
-      }
-
-      soundFX.playCatalystChord();
-      const hash = hashString(`SOLO_VESPERA_CATALYST_DAY_${prev.day}_${prev.seed}`).slice(0, 8).toUpperCase();
-      const entry = {
-        id: `cat_solo_d${prev.day}_${hash.toLowerCase()}`,
-        senderName: 'Arch-Architect Vespera (Blackspire Panopticon)',
-        senderType: 'SOLO_DM_COURIER' as const,
-        provenanceHash: hash,
-        dayReceived: prev.day,
-        commissionNote:
-          'Solo Offline Commission Fulfilled in Blackspire: Demonstrated custom offensive trap engineering, stabilised alchemy, and bilateral double-sales.',
-        isAuthentic: true
-      };
-      const nextRegions: RegionId[] = prev.unlockedRegions.includes('vault')
-        ? prev.unlockedRegions
-        : [...prev.unlockedRegions, 'vault'];
-      return {
-        ...prev,
-        expertUnlocked: true,
-        unlockedRegions: nextRegions,
-        activeRegion: 'vault',
-        catalystLedger: [entry, ...prev.catalystLedger]
-      };
+    setGameState(prev => {
+      const next=claimSoloCatalyst(prev);
+      if (next !== prev) soundFX.playCatalystChord();
+      return next;
     });
     setStatusBanner(
       'Paradox Catalyst Received by Courier from Arch-Architect Vespera! Region IV: The Paradox Vault (Expert) is now permanently unlocked!'
@@ -764,8 +720,9 @@ export default function App() {
     return (
       <>
         <OfflineIndicator />
+        {recoveryNotice && <div role="alert" className="p-3 bg-amber-950 text-amber-200 text-sm">{recoveryNotice}</div>}
         <TitleScreen
-          hasSavedGame={gameState.day > 1 || gameState.contractHistory.length > 0}
+          hasSavedGame={saveBlocked.current || gameState.day > 1 || gameState.contractHistory.length > 0}
           savedDay={gameState.day}
           savedGold={gameState.gold}
           reducedMotion={a11y.reducedMotion}
@@ -790,7 +747,7 @@ export default function App() {
       <OfflineIndicator />
 
       {/* Top Bar Contract: Zone 1 Brand Wordmark — Zone 2 Concise Nav Links — Zone 3 Primary Action */}
-      <header className="flex items-center justify-between gap-4 px-4 sm:px-5 py-2.5 bg-[#0B0E14] border-b border-slate-800/90 shrink-0">
+      <header className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-4 px-4 sm:px-5 py-2.5 bg-[#0B0E14] border-b border-slate-800/90 shrink-0">
         <button
           onClick={() => setShellState('TITLE_MENU')}
           className="font-display text-base sm:text-lg font-bold tracking-tight text-amber-400 hover:text-amber-300 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
@@ -953,7 +910,7 @@ export default function App() {
                     )}
                     {rm.chemicalReaction?.includes('Temporal Rewind Loop') && (
                       <div className="text-cyan-400 text-[11px] bg-cyan-950/40 p-1.5 rounded border border-cyan-800/50">
-                        ↻ Temporal Rewind: Restores trigger to armed state via closed timelike loop.
+                        ↻ Temporal module: one paid charge prevents one wear removal; settlement persists after the raid.
                       </div>
                     )}
                   </div>
@@ -972,8 +929,9 @@ export default function App() {
                 onRoomAdvance={setActiveRoomIdx}
               />
 
-              {/* Low-Occlusion Perimeter HUD Overlay (pointer-events-none, zero backdrop-filter) */}
-              <div className="absolute inset-0 pointer-events-none p-4 flex flex-col justify-between">
+            </div>
+            {/* Status and room controls occupy their own flow; never cover the touch playfield. */}
+            <div className="p-3 bg-[#0B0E14] border border-slate-800 rounded-lg space-y-3">
                 <div className="flex items-start justify-between gap-4">
                   <div className="bg-[#0B0E14]/90 border border-slate-800 px-3 py-1.5 rounded text-xs font-mono tabular-nums text-slate-200">
                     <span>
@@ -993,7 +951,7 @@ export default function App() {
 
                 <div className="flex items-end justify-between gap-4">
                   <div className="bg-[#0B0E14]/90 border border-slate-800 px-3 py-1.5 rounded text-xs font-mono text-slate-300">
-                    WASD Pan Camera · Space Step Room ({activeRoomIdx + 1}/{activeCanvasReport.rooms.length})
+                    Drag to pan · WASD / arrows · Space steps rooms ({activeRoomIdx + 1}/{activeCanvasReport.rooms.length})
                   </div>
                   <div className="pointer-events-auto flex items-center gap-2">
                     {activeCanvasReport.rooms.map((rm, idx) => (
@@ -1011,7 +969,6 @@ export default function App() {
                     ))}
                   </div>
                 </div>
-              </div>
             </div>
 
             {/* Causal Chain After-Action Breakdown */}

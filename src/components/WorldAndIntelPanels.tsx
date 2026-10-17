@@ -278,7 +278,7 @@ export const ClientDirectoryPanel: React.FC<ClientDirectoryProps> = ({ masters, 
                     {m.region.toUpperCase()} · Budget {m.budget}g · Trust {m.trust}
                   </span>
                 </div>
-                <div className="text-slate-400">{m.title} — {m.personality}</div>
+                <div className="text-slate-400">{m.title} — {m.personality}</div><p className="text-xs text-amber-300">Temporal resets remaining: {(m.installedResetCharges ?? []).reduce((sum,n)=>sum+n,0)}</p>
                 <div className="font-mono text-slate-300 tabular-nums">
                   Deterrence {m.deterrenceScore} · Prestige {m.prestigeScore} · Visitor Traffic {m.visitorTraffic}%
                 </div>

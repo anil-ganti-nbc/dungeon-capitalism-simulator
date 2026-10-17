@@ -6,6 +6,9 @@ import { createInitialSaveState, validateSavePayload, normalizeLoadedSave, loadG
 import { createBaselineState, runSingleCampaign, StrategyId } from '../src/engine/campaignRunner';
 import { computeQuotation, executeCommercialTransaction, resolveConsumableWear } from '../src/engine/economyEngine';
 import { getDailyMarketContext } from '../src/engine/marketContext';
+import { assembleTrapProduct, isTrapTriggeredByMass, simulateRegionExpedition, generatePeerCatalystCode, verifyAndParseCatalystCode } from '../src/engine/simulation';
+import { TRAP_PARTS_CATALOG } from '../src/data/catalog';
+import { claimSoloCatalyst } from '../src/engine/progression';
 
 const terms = { priceMultiplier:1, warrantyBacked:false, exclusiveDeal:false, secretProvenance:false };
 const strategies: StrategyId[] = ['BALANCED_MERCHANT','DUNGEON_LOYALIST','HERO_BENEFACTOR','ALCHEMICAL_INDUSTRIALIST','PREDATORY_CAPITALIST'];
@@ -102,4 +105,41 @@ test('wrong audience, stale/empty stock, unlocked other region and locked curren
 test('10 raids without purchases produce zero paid equipment, duplicate potions deplete individually',()=>{
   const s=createInitialSaveState(), p=s.parties[0],m=s.masters[0]; p.equippedProducts=[s.products[0].id,s.products[0].id];m.installedHazards=[];
   for(let d=1;d<=10;d++){const w=resolveConsumableWear(p,m,0,d,[]);p.equippedProducts=w.nextEquipped;m.installedHazards=w.nextInstalled;assert.equal(p.equippedProducts.length,Math.max(0,2-d));assert.equal(m.installedHazards.length,0);}
+});
+test('five actual runner policies, 50 no-purchase raids, zero phantom grants',()=>{
+  for(const strategy of strategies) {
+    const initial=createInitialSaveState();let last=initial;
+    runSingleCampaign(initial.seed,strategy,10,false,undefined,{tradeEnabled:false,onAfterRaid:s=>{
+      assert.equal(s.contractHistory.length,0);
+      for(const m of s.masters) assert(m.installedHazards.length<=last.masters.find(p=>p.id===m.id)!.installedHazards.length);
+      for(const p of s.parties) assert(p.equippedProducts.length<=last.parties.find(o=>o.id===p.id)!.equippedProducts.length);
+      last=s;
+    }});
+    assert.equal(last.day,10);
+  }
+});
+test('shared inversion predicate at 19/21/25/86kg and one paid persistent temporal rewind',()=>{
+  const ids=['part_trg_12','part_con_01','part_del_01','part_pay_01','part_pow_01','part_rst_09'];
+  const trap=assembleTrapProduct(ids.map(id=>TRAP_PARTS_CATALOG.find(p=>p.id===id)!) as any,'Temporal test',false);
+  let s=createInitialSaveState();s.products.push(trap);s.masters[0].installedHazards=[];s.masters[0].installedResetCharges=[];s.masters[0].budget=99999;
+  const tx=executeCommercialTransaction(s,'MASTER',s.masters[0].id,trap,terms);assert(tx.success,tx.reason);s=tx.nextState!;
+  for(const mass of [19,21,25,86]) {
+    assert.equal(isTrapTriggeredByMass(trap,mass),mass<25);
+    const m={...s.masters[0],installedHazards:[trap.id]},p=structuredClone(s.parties[0]);p.equippedProducts=[];p.members[0].massKg=mass;
+    const report=simulateRegionExpedition(3,s.seed,m,p,s.products,[]);
+    assert.equal(report.rooms[0].outcome,mass<25?'TRAP_TRIGGERED':'TRAP_BYPASSED');
+  }
+  const m=s.masters[0];assert.deepEqual(m.installedResetCharges,[1]);
+  const first=resolveConsumableWear(s.parties[0],m,0,3,[]);assert.equal(first.rewindsSpent,1);assert.deepEqual(first.nextInstalled,[trap.id]);
+  m.installedHazards=first.nextInstalled;m.installedResetCharges=first.nextResetCharges;
+  s=normalizeLoadedSave(s);assert.deepEqual(s.masters[0].installedResetCharges,[0]);
+  const second=resolveConsumableWear(s.parties[0],s.masters[0],0,6,[]);assert.deepEqual(second.nextInstalled,[]);assert.deepEqual(second.nextResetCharges,[]);
+});
+test('community checksum is never authentic and cannot grant Expert, solo command requires actual bilateral work',()=>{
+  const s=createInitialSaveState();s.unlockedRegions.push('warrens','blackspire');
+  const c=verifyAndParseCatalystCode(generatePeerCatalystCode('MERCHANT',9),9,[],s.unlockedRegions);
+  assert(c.valid);assert.equal(c.entry!.isAuthentic,false);assert.equal(claimSoloCatalyst(s),s);
+  for(const strategy of ['DUNGEON_LOYALIST','HERO_BENEFACTOR'] as StrategyId[]) {
+    const r=runSingleCampaign(20260001,strategy,120);assert.equal(r.finalState.expertUnlocked,false,'specialist peer bypass must not unlock Expert');
+  }
 });

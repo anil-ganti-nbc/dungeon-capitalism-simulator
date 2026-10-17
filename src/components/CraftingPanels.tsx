@@ -1,3 +1,4 @@
+import { isTrapTriggeredByMass } from '../engine/simulation';
 import React, { useState, useMemo } from 'react';
 import {
   Reagent,
@@ -582,27 +583,28 @@ export const TrapWorkshopPanel: React.FC<TrapWorkshopProps> = ({
             </div>
           </div>
 
+          {previewTrap.recipeComponents.includes('part_rst_09') && <p className="text-sm text-amber-200 mb-3">Each purchased installation includes one temporal rewind. It prevents one wear removal, consumes that charge, then wears normally. A new paid installation replenishes it.</p>}
           {/* Mass Trigger Calibration vs Chicken-Morph Test */}
           <div className="p-3 bg-[#0B0E14] border border-slate-800 rounded-lg mb-4 text-xs">
             <div className="font-mono text-slate-300 mb-1.5">
-              Trigger Calibration: {previewTrap.triggerMassThresholdKg}kg Floor Threshold
+              Trigger Calibration: {previewTrap.recipeComponents.includes('part_trg_12') ? 'Inversion: under 25kg' : `${previewTrap.triggerMassThresholdKg}kg floor threshold`}
             </div>
             <div className="flex items-center justify-between text-slate-400 font-mono tabular-nums py-1 border-b border-slate-800/70">
               <span>Standard Vanguard (~86kg):</span>
-              <span className="text-rose-400 font-semibold">TRIGGERS TRAP</span>
+              <span className="font-semibold">{isTrapTriggeredByMass(previewTrap, 86) ? 'TRIGGERS TRAP' : 'BYPASSES SENSOR'}</span>
             </div>
             <div className="flex items-center justify-between text-slate-400 font-mono tabular-nums py-1">
               <span>Chicken-Morphed Hero (~21kg):</span>
               <span
                 className={
-                  previewTrap.triggerMassThresholdKg > 21
+                  !isTrapTriggeredByMass(previewTrap, 21)
                     ? 'text-emerald-400 font-semibold'
                     : 'text-rose-400 font-semibold'
                 }
               >
-                {previewTrap.triggerMassThresholdKg > 21
+                {!isTrapTriggeredByMass(previewTrap, 21)
                   ? 'BYPASSES PLATE (<Threshold!)'
-                  : 'CAUGHT BY HAIR-TRIGGER!'}
+                  : 'TRIGGERS SENSOR'}
               </span>
             </div>
           </div>

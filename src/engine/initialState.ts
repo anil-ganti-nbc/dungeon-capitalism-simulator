@@ -54,6 +54,7 @@ export function createInitialSaveState(seed: number = 20260001): GameSaveState {
       ...m,
       knownHeroCounters: [...m.knownHeroCounters],
       installedHazards: [...m.installedHazards],
+      installedResetCharges: m.installedHazards.map(() => 0),
       memoryLog: [...m.memoryLog]
     })),
     parties: INITIAL_PARTIES.map((p) => ({

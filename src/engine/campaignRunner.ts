@@ -1,3 +1,4 @@
+import { claimSoloCatalyst } from './progression';
 import { getDailyMarketContext } from './marketContext';
 import {
   GameSaveState,
@@ -127,7 +128,8 @@ export function runSingleCampaign(
   strategy: StrategyId,
   horizonDays: number = 120,
   recordEvents: boolean = false,
-  onTrade?: (event: TradeEvent) => void
+  onTrade?: (event: TradeEvent) => void,
+  controls: { tradeEnabled?: boolean; onAfterRaid?: (state: GameSaveState) => void } = {}
 ): { metrics: CampaignMetrics; events: EconomyEventLogEntry[]; actionLog: string[]; finalState: GameSaveState } {
   let state = createBaselineState(seed);
   const campaignId = `${strategy.slice(0, 4)}_S${seed}`;
@@ -363,46 +365,10 @@ export function runSingleCampaign(
       masterContractsSigned >= 2 &&
       heroContractsSigned >= 2;
 
-    const specialistPeerExchangeReady =
-      state.unlockedRegions.includes('blackspire') &&
-      !soloCatalystReady &&
-      daysSinceHard >= requiredHardTenure + 4 &&
-      ((strategy === 'DUNGEON_LOYALIST' && state.customTrapsCount >= 8 && masterContractsSigned >= 20) ||
-        (strategy === 'HERO_BENEFACTOR' && state.customBrewsCount >= 8 && heroContractsSigned >= 20));
-
-    if ((soloCatalystReady || specialistPeerExchangeReady) && !state.expertUnlocked) {
-      if (soloCatalystReady) {
-        state.expertUnlocked = true;
-        state.unlockedRegions.push('vault');
-        state.activeRegion = 'vault';
-        dayReachedExpert = d;
-        const hash = hashString(`SOLO_VESPERA_CATALYST_DAY_${d}_${seed}`).slice(0, 8).toUpperCase();
-        state.catalystLedger.push({
-          id: `cat_solo_${d}`,
-          senderName: 'Arch-Architect Vespera (Blackspire Panopticon)',
-          senderType: 'SOLO_DM_COURIER',
-          provenanceHash: hash,
-          dayReceived: d,
-          commissionNote: 'Solo Offline Commission Fulfilled in Blackspire.',
-          isAuthentic: true
-        });
-        actionLog.push(`D${d}:CLAIM_SOLO_CATALYST`);
-      } else {
-        const peerCode = generatePeerCatalystCode('GUILDCONCLAVE', d);
-        const verified = verifyAndParseCatalystCode(
-          peerCode,
-          d,
-          state.catalystLedger,
-          state.unlockedRegions
-        );
-        if (verified.valid && verified.entry) {
-          state.expertUnlocked = true;
-          state.unlockedRegions.push('vault');
-          state.activeRegion = 'vault';
-          dayReachedExpert = d;
-          state.catalystLedger.push(verified.entry);
-          actionLog.push(`D${d}:VERIFY_PEER_CATALYST:${peerCode}`);
-        }
+    if (soloCatalystReady && !state.expertUnlocked) {
+      const next = claimSoloCatalyst(state);
+      if (next !== state) {
+        state = next; dayReachedExpert=d; actionLog.push(`D${d}:CLAIM_SOLO_CATALYST`);
       }
 
       if (state.expertUnlocked && recordEvents) {
@@ -626,7 +592,7 @@ export function runSingleCampaign(
       strategy === 'PREDATORY_CAPITALIST' ||
       (strategy === 'ALCHEMICAL_INDUSTRIALIST' && d % 2 === 0);
 
-    if (shouldSellToMaster) {
+    if (shouldSellToMaster && controls.tradeEnabled !== false) {
       const masterOptions = state.products.filter(
         (p) => (p.targetAudience === 'MASTER' || p.targetAudience === 'BOTH') && p.stock > 0
       );
@@ -680,7 +646,7 @@ export function runSingleCampaign(
       strategy === 'ALCHEMICAL_INDUSTRIALIST' ||
       strategy === 'PREDATORY_CAPITALIST';
 
-    if (shouldSellToHero) {
+    if (shouldSellToHero && controls.tradeEnabled !== false) {
       const heroOptions = state.products.filter(
         (p) => (p.targetAudience === 'HERO' || p.targetAudience === 'BOTH') && p.stock > 0
       );
@@ -893,6 +859,7 @@ export function runSingleCampaign(
         return {
           ...m,
           installedHazards: wear.nextInstalled,
+            installedResetCharges: wear.nextResetCharges,
           budget: Math.max(450, m.budget + report.masterTreasuryDelta + 320)
         };
       }
@@ -911,6 +878,7 @@ export function runSingleCampaign(
       return { ...p, budget: p.budget + 160 };
     });
 
+    if (controls.onAfterRaid) controls.onAfterRaid(structuredClone(state));
     if (d === 15 || d === 45 || d === 90 || d === 120) {
       notableStoryLog.push(
         `Day ${d} (${state.activeRegion}): ${report.summaryHeadline} [Cash: ${state.gold}g, Debt: ${state.debt}g]`

@@ -9,19 +9,22 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test": "tsx --test scripts/foundation.test.ts"
+    "test": "tsx --test scripts/foundation.test.ts",
+    "test:browser": "tsx scripts/replay_parity.ts && tsx scripts/browser_foundation.ts",
+    "test:negative": "node scripts/verify_negative.mjs",
+    "test:offline": "tsx scripts/offline_smoke.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
     "@tailwindcss/vite": "^4.3.3",
     "@vitejs/plugin-react": "^6.1.1",
+    "dotenv": "^17.2.3",
+    "express": "^4.21.2",
     "lucide-react": "^0.546.0",
+    "motion": "^12.23.24",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "vite": "^8.3.0",
-    "express": "^4.21.2",
-    "dotenv": "^17.2.3",
-    "motion": "^12.23.24",
     "workbox-window": "^7.4.1"
   },
   "devDependencies": {
@@ -31,6 +34,7 @@
     "@types/react-dom": "^19.3.0",
     "autoprefixer": "^10.4.21",
     "esbuild": "^0.28.0",
+    "playwright": "^1.62.1",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.21.0",
     "typescript": "^7.0.2",

@@ -53,6 +53,7 @@ export function normalizeLoadedSave(input: Partial<GameSaveState>): GameSaveStat
         if (known) s.products.push({ ...structuredClone(known), stock: 0 });
       }
     }
+    for (const m of s.masters ?? []) if (m && Array.isArray(m.installedHazards)) m.installedResetCharges ??= m.installedHazards.map(() => 0);
     const sched: any = s.scheduledMatchups ?? {};
     for (const r of regions) {
       const m = s.masters?.find(m => m?.id === sched[r]?.masterId && m.region === r) ?? s.masters?.find(m => m?.region === r);
@@ -89,6 +90,7 @@ function validateState(s: GameSaveState) {
     ensure(['TONIC_HERO','COUNTER_GEAR','TRAP_MASTER','HAZARD_MONSTER','DUAL_SOLVENT'].includes(p.category), 'product category');
     for (const k of ['counterClasses','recipeComponents','reactionNotes'] as const) ensure(strings(p[k]), `product.${k}`);
     ensure(p.counterClasses.every(c => ['detection','disruption','resistance','bypass_mass','sabotage','routing','filtration'].includes(c)), 'counter classes');
+    for (const k of ['formulaSignature','rulesVersion'] as const) if (p[k] !== undefined) ensure(typeof p[k] === 'string', `product.${k}`);
     if (p.appliedSkills !== undefined) ensure(strings(p.appliedSkills), 'applied skills');
     for (const k of ['potency','stability','reliability','detectionDC'] as const) ensure(p[k] >= 0 && p[k] <= 100, `product.${k}`);
   }
@@ -111,6 +113,7 @@ function validateState(s: GameSaveState) {
       } else {
         ensure(strings(c.knownHeroCounters) && strings(c.installedHazards) && c.installedHazards.every(id => sku.has(id)), 'master SKU references');
         ensure(count(c.catalystCommissionStage), 'commission stage');
+        ensure(Array.isArray(c.installedResetCharges) && c.installedResetCharges.length === c.installedHazards.length && c.installedResetCharges.every((n,i) => count(n) && n <= 1 && (n === 0 || s.products.find(p=>p.id===c.installedHazards[i])?.recipeComponents.includes('part_rst_09'))), 'temporal slot charges');
       }
     }
     unique(list as any[], kind);
@@ -189,8 +192,9 @@ export function loadGameWithRecovery(storage: Storage = localStorage): SaveLoadR
 }
 export function persistAtomicSaveSafe(state: GameSaveState, storage: Storage = localStorage): boolean {
   try {
-    const serialized = JSON.stringify(state); const outgoing = validateSavePayload(serialized);
+    const outgoing = validateSavePayload(JSON.stringify(state));
     if (!outgoing.valid) return false;
+    const serialized = JSON.stringify(outgoing.state);
     const previous = storage.getItem(SAVE_STORAGE_KEY);
     if (previous === serialized) return true;
     if (previous && validateSavePayload(previous).valid) storage.setItem(SAVE_BACKUP_KEY,previous);
