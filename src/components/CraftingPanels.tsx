@@ -342,6 +342,7 @@ interface TrapWorkshopProps {
   unlockedRegions: RegionId[];
   partInventory: Record<string, number>;
   zincGuardUnlocked: boolean;
+  autoResetCamUnlocked: boolean;
   onAssembleTrap: (product: CraftedProduct, cost: number, consumedIds: string[]) => void;
   onBuyPart: (part: TrapPart, qty: number) => void;
 }
@@ -351,6 +352,7 @@ export const TrapWorkshopPanel: React.FC<TrapWorkshopProps> = ({
   unlockedRegions,
   partInventory,
   zincGuardUnlocked,
+  autoResetCamUnlocked,
   onAssembleTrap,
   onBuyPart
 }) => {
@@ -386,8 +388,8 @@ export const TrapWorkshopPanel: React.FC<TrapWorkshopProps> = ({
   }, [triggerId, concealId, deliveryId, payloadId, powerId, resetId, triggers, concealments, deliveries, payloads, powers, resets]);
 
   const previewTrap = useMemo(
-    () => assembleTrapProduct(selectedTuple, customName, zincGuardUnlocked),
-    [selectedTuple, customName, zincGuardUnlocked]
+    () => assembleTrapProduct(selectedTuple, customName, zincGuardUnlocked, autoResetCamUnlocked),
+    [selectedTuple, customName, zincGuardUnlocked, autoResetCamUnlocked]
   );
 
   const loadTrapPreset = (preset: 'plate_45kg' | 'sulphur_fog_machine' | 'basilisk_lair' | 'quartz_8kg_acid') => {

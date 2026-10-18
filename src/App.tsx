@@ -1036,6 +1036,7 @@ export default function App() {
             unlockedRegions={gameState.unlockedRegions}
             partInventory={gameState.partInventory}
             zincGuardUnlocked={isSkillUnlocked('zinc_guard')}
+            autoResetCamUnlocked={isSkillUnlocked('auto_reset_cam')}
             onAssembleTrap={handleAssembleTrap}
             onBuyPart={handleBuyPart}
           />

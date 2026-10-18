@@ -537,7 +537,7 @@ export function runSingleCampaign(
       );
 
       if (state.gold >= spotCost) {
-        const trapProd = assembleTrapProduct(partTuple, trapName, zincGuard);
+        const trapProd = assembleTrapProduct(partTuple, trapName, zincGuard, hasSkill('auto_reset_cam'));
         partIds.forEach((id) => {
           if ((state.partInventory[id] || 0) > 0) state.partInventory[id] -= 1;
         });

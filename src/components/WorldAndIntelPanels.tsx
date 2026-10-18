@@ -10,6 +10,7 @@ import {
 } from '../types/game';
 import { generatePeerCatalystCode } from '../engine/simulation';
 import { Sim001AuditPanel } from './Sim001AuditPanel';
+import { SKILL_TREE_NODES } from '../data/catalog';
 
 interface IntelPanelProps {
   day: number;
@@ -381,7 +382,7 @@ export const SpecialisationsPanel: React.FC<SpecialisationsProps> = ({
                       <span>{sk.unlocked ? 'ACTIVE' : `${sk.costPoints} SP`}</span>
                     </div>
                     <div className="font-semibold text-slate-100 mb-1">{sk.name}</div>
-                    <p className="text-slate-400 leading-relaxed">{sk.description}</p>
+                    <p className="text-slate-400 leading-relaxed">{SKILL_TREE_NODES.find(node => node.id === sk.id)?.description ?? sk.description}</p>
                   </div>
                   {!sk.unlocked && (
                     <button

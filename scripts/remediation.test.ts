@@ -2,9 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import zlib from 'node:zlib';
-import { resolvePostRaidClients, computeQuotation } from '../src/engine/economyEngine';
+import { resolvePostRaidClients, computeQuotation, resolveConsumableWear } from '../src/engine/economyEngine';
 import { GameSaveState, ExpeditionReport } from '../src/types/game';
 import { runSingleCampaign } from '../src/engine/campaignRunner';
+import { assembleTrapProduct, simulateRegionExpedition } from '../src/engine/simulation';
+import { TRAP_PARTS_CATALOG } from '../src/data/catalog';
 import { createInitialSaveState, validateSavePayload, loadGameWithRecovery, persistAtomicSaveSafe,
   SAVE_STORAGE_KEY, SAVE_BACKUP_KEY, QUARANTINE_KEY } from '../src/engine/saveManager';
 
@@ -25,6 +27,43 @@ test('D01 reviewer breach: shared -8 once, budgets/loadouts/memory preserved and
     const options={...before.tradeTerms!,seed:before.seed,day:report.day+1,unlockedSkills:before.skills.filter(s=>s.unlocked).map(s=>s.effectKey)};
     assert.deepEqual(computeQuotation(product,actual[clients].find((c:any)=>c.id===id),type,options),computeQuotation(product,settled[clients].find(c=>c.id===id)!,type,options));
   }
+});
+const parts=(ids:string[])=>ids.map(id=>TRAP_PARTS_CATALOG.find(p=>p.id===id)!);
+const defaultPartIds=['part_trg_01','part_con_01','part_del_01','part_pay_01','part_pow_01','part_rst_01'];
+test('D03 new cam assembly gains exactly 12 DC, a distinct identity and no unrelated stat/price boost',()=>{
+  const tuple=parts(defaultPartIds);
+  const before=Reflect.apply(assembleTrapProduct,undefined,[tuple,'Same display name',false,false]);
+  const after=Reflect.apply(assembleTrapProduct,undefined,[tuple,'Same display name',false,true]);
+  assert.equal(before.detectionDC,21);assert.equal(after.detectionDC,33);
+  assert.notEqual(after.id,before.id);assert(after.appliedSkills.includes('auto_reset_cam'));
+  for(const key of ['productionCost','suggestedPrice','potency','stability','reliability','stock','recipeComponents','counterClasses'])assert.deepEqual(after[key],before[key]);
+  assert.deepEqual(after,Reflect.apply(assembleTrapProduct,undefined,[tuple,'Same display name',false,true]));
+});
+test('D03 the persisted DC changes real detection rolls, not merely a description',()=>{
+  const tuple=parts([...defaultPartIds.slice(0,1),'part_con_03',...defaultPartIds.slice(2)]);
+  const base=Reflect.apply(assembleTrapProduct,undefined,[tuple,'DC base',false,false]);
+  const cam=Reflect.apply(assembleTrapProduct,undefined,[tuple,'DC cam',false,true]);
+  assert.equal(cam.detectionDC,base.detectionDC+12);
+  const s=createInitialSaveState();s.parties[0].equippedProducts=[];let changed=false;
+  for(let seed=1;seed<=200;seed++){
+    const ordinary=simulateRegionExpedition(1,seed,{...s.masters[0],installedHazards:[base.id]},s.parties[0],[...s.products,base],[]).rooms[0];
+    const improved=simulateRegionExpedition(1,seed,{...s.masters[0],installedHazards:[cam.id]},s.parties[0],[...s.products,cam],[]).rooms[0];
+    if(ordinary.outcome==='COUNTER_SUCCEEDED'&&improved.outcome==='TRAP_TRIGGERED'){changed=true;assert(improved.causalExplanation.includes(`DC ${cam.detectionDC}`));break;}
+  }
+  assert(changed,'the additional detection difficulty must affect an actual raid');
+});
+test('D03 high-end new assemblies retain the exact +12 above 100 and survive save validation',()=>{
+  const s=createInitialSaveState();
+  const p=Reflect.apply(assembleTrapProduct,undefined,[parts(['part_trg_12','part_con_10','part_del_10','part_pay_01','part_pow_01','part_rst_01']),'High DC',false,true]);
+  assert.equal(p.detectionDC,103);s.products.push(p);
+  const restored=validateSavePayload(JSON.stringify(s));assert(restored.valid,restored.error);assert.equal(restored.state!.products.find(r=>r.id===p.id)!.detectionDC,103);
+});
+test('D03 preserves existing global wear immunity, including warranty wear and saved temporal charge',()=>{
+  const s=createInitialSaveState();
+  const trap=Reflect.apply(assembleTrapProduct,undefined,[parts([...defaultPartIds.slice(0,5),'part_rst_09']),'Existing temporal trap',false,false]);
+  const master={...s.masters[0],installedHazards:[trap.id],installedResetCharges:[1]};
+  const before=structuredClone(master),wear=resolveConsumableWear(s.parties[0],master,3,3,['auto_reset_cam']);
+  assert.deepEqual(wear.nextInstalled,[trap.id]);assert.deepEqual(wear.nextResetCharges,[1]);assert.equal(wear.rewindsSpent,0);assert.deepEqual(master,before);
 });
 class RepairStorage {
   data=new Map<string,string>(); writes=0; failAt=-1;

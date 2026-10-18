@@ -15,6 +15,7 @@ import {
 import { DeterministicRNG, hashString } from '../utils/prng';
 
 export const SIM_RULES_VERSION = 'v2.0-sim002';
+export const AUTO_RESET_CAM_DC_BONUS = 12;
 
 /** Shared workshop/live predicate; inversion sensors detect only featherweight intruders. */
 export function isMassInversionPlate(hazard: CraftedProduct): boolean {
@@ -239,12 +240,16 @@ export function synthesizeAlchemyProduct(
 export function assembleTrapProduct(
   parts: [TrapPart, TrapPart, TrapPart, TrapPart, TrapPart, TrapPart],
   customName: string,
-  zincGuardUnlocked: boolean
+  zincGuardUnlocked: boolean,
+  autoResetCamUnlocked: boolean = false
 ): CraftedProduct {
   const [trigger, concealment, delivery, payload, power, reset] = parts;
   const all = [trigger, concealment, delivery, payload, power, reset];
   const componentIds = all.map((p) => p.id);
-  const appliedSkills = zincGuardUnlocked ? ['zinc_guard'] : [];
+  const appliedSkills = [
+    ...(zincGuardUnlocked ? ['zinc_guard'] : []),
+    ...(autoResetCamUnlocked ? ['auto_reset_cam'] : [])
+  ];
 
   const totalCost = Math.round(all.reduce((acc, p) => acc + p.baseCost, 0) * 0.85);
   const rawLethality = all.reduce((acc, p) => acc + p.lethality, 0);
@@ -252,6 +257,7 @@ export function assembleTrapProduct(
   const avgDetection = Math.round(
     trigger.detectionDC * 0.35 + concealment.detectionDC * 0.45 + delivery.detectionDC * 0.2
   );
+  const detectionDC = avgDetection + (autoResetCamUnlocked ? AUTO_RESET_CAM_DC_BONUS : 0);
 
   const potency = Math.max(20, Math.min(100, Math.round(rawLethality * 0.55)));
   const stability = Math.max(25, Math.min(100, Math.round(rawDeterrence * 0.52)));
@@ -272,8 +278,9 @@ export function assembleTrapProduct(
   }
 
   const reactionNotes: string[] = [
-    `Trigger Mass Threshold: ${massThreshold > 0 ? `${massThreshold}kg` : '0kg (Non-Mass Sensor)'} · Detection DC ${avgDetection}`
+    `Trigger Mass Threshold: ${massThreshold > 0 ? `${massThreshold}kg` : '0kg (Non-Mass Sensor)'} · Detection DC ${detectionDC}`
   ];
+  if (autoResetCamUnlocked) reactionNotes.push(`Secondary Fail-Deadly Cam: +${AUTO_RESET_CAM_DC_BONUS} Detection DC (${avgDetection} → ${detectionDC}); applied at assembly, not retroactively.`);
   if (trigger.id === 'part_trg_12') {
     reactionNotes.push('MASS INVERSION: triggers below 25kg; heavier intruders bypass the sensor.');
   } else if (massThreshold >= 35) {
@@ -319,7 +326,7 @@ export function assembleTrapProduct(
     curesPetrification: false,
     filtersSulphur: false,
     triggerMassThresholdKg: massThreshold,
-    detectionDC: avgDetection,
+    detectionDC,
     damageType: payload.damageType,
     counterClasses: Array.from(counterSet),
     recipeComponents: componentIds,

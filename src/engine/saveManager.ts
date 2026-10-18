@@ -2,6 +2,7 @@ import { GameSaveState } from '../types/game';
 import { INITIAL_PRODUCTS, REAGENTS_CATALOG, TRAP_PARTS_CATALOG } from '../data/catalog';
 import { hashString } from '../utils/prng';
 import { createInitialSaveState } from './initialState';
+import { AUTO_RESET_CAM_DC_BONUS } from './simulation';
 export { createInitialSaveState } from './initialState';
 
 export const SAVE_STORAGE_KEY = 'trap_and_tonic_save_v2';
@@ -96,7 +97,9 @@ function validateState(s: GameSaveState) {
     ensure(p.counterClasses.every(c => ['detection','disruption','resistance','bypass_mass','sabotage','routing','filtration'].includes(c)), 'counter classes');
     for (const k of ['formulaSignature','rulesVersion'] as const) if (p[k] !== undefined) ensure(typeof p[k] === 'string', `product.${k}`);
     if (p.appliedSkills !== undefined) ensure(strings(p.appliedSkills), 'applied skills');
-    for (const k of ['potency','stability','reliability','detectionDC'] as const) ensure(p[k] >= 0 && p[k] <= 100, `product.${k}`);
+    for (const k of ['potency','stability','reliability'] as const) ensure(p[k] >= 0 && p[k] <= 100, `product.${k}`);
+    const maxDC = 100 + (p.targetAudience === 'MASTER' && p.appliedSkills?.includes('auto_reset_cam') ? AUTO_RESET_CAM_DC_BONUS : 0);
+    ensure(p.detectionDC >= 0 && p.detectionDC <= maxDC, 'product.detectionDC');
   }
   unique(s.products, 'products');
   const sku = new Set(s.products.map(p => p.id));
