@@ -33,7 +33,7 @@ import {
 import {
   computeQuotation,
   executeCommercialTransaction,
-  resolveConsumableWear,
+  resolvePostRaidClients,
   computeRegionalFinesAndClaims
 } from './economyEngine';
 import { DeterministicRNG, hashString } from '../utils/prng';
@@ -744,20 +744,13 @@ export function runSingleCampaign(
     }
 
     warrantyClaimsCount += report.warrantyClaimsTriggered;
-    const regionalBreachFine: Record<RegionId, number> = {
-      cellar: 160,
-      warrens: 240,
-      blackspire: 380,
-      vault: 520
-    };
-    const dayFines = report.exclusivityBreachDetected
-      ? regionalBreachFine[state.activeRegion]
-      : 0;
+    const { breachFine: dayFines, warrantyPayout: dayClaims } = computeRegionalFinesAndClaims(
+      state.activeRegion, report.exclusivityBreachDetected, report.warrantyClaimsTriggered,
+      state.skills.filter(s => s.unlocked).map(s => s.effectKey)
+    );
 
     if (report.exclusivityBreachDetected) {
       exclusivityBreachesCount += 1;
-      activeMaster.trust = Math.max(15, activeMaster.trust - 8);
-      activeParty.trust = Math.max(15, activeParty.trust - 8);
       if (recordEvents && events.length < 30) {
         events.push({
           campaignId,
@@ -777,10 +770,6 @@ export function runSingleCampaign(
     const dayRev = state.contractsToday.reduce((acc, c) => acc + c.totalRevenue, 0);
     const dayCogs = state.contractsToday.reduce((acc, c) => acc + c.unitCost * c.quantity, 0);
     const dayOverhead = 35 + state.unlockedRegions.length * 20;
-    const hasWarrantyShield = hasSkill('warranty_shield');
-    const dayClaims = Math.round(
-      report.warrantyClaimsTriggered * 165 * (hasWarrantyShield ? 0.6 : 1)
-    );
     const dailyInterestRate = cheapCredit ? 0.003 : 0.005;
     const dayInterest = Math.round(state.debt * dailyInterestRate);
 
@@ -844,39 +833,8 @@ export function runSingleCampaign(
       partyId: schedule.nextParty.id
     };
 
-    // Update Master & Party budgets, trust, and consumable wear (A03: shared resolveConsumableWear)
-    const unlockedSkillKeys = state.skills.filter((s) => s.unlocked).map((s) => s.effectKey);
-    const wear = resolveConsumableWear(
-      activeParty,
-      activeMaster,
-      report.warrantyClaimsTriggered,
-      d,
-      unlockedSkillKeys
-    );
-
-    state.masters = state.masters.map((m) => {
-      if (m.id === activeMaster.id) {
-        return {
-          ...m,
-          installedHazards: wear.nextInstalled,
-            installedResetCharges: wear.nextResetCharges,
-          budget: Math.max(450, m.budget + report.masterTreasuryDelta + 320)
-        };
-      }
-      return { ...m, budget: m.budget + 180 };
-    });
-
-    state.parties = state.parties.map((p) => {
-      if (p.id === activeParty.id) {
-        return {
-          ...p,
-          equippedProducts: wear.nextEquipped,
-          budget: Math.max(420, p.budget + report.partyBudgetDelta + 290),
-          trust: Math.max(15, p.trust - report.warrantyClaimsTriggered * 12)
-        };
-      }
-      return { ...p, budget: p.budget + 160 };
-    });
+    // The same post-raid client transition as the actual UI; no second breach decrement.
+    Object.assign(state, resolvePostRaidClients(state, report));
 
     if (controls.onAfterRaid) controls.onAfterRaid(structuredClone(state));
     if (d === 15 || d === 45 || d === 90 || d === 120) {

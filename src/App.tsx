@@ -61,7 +61,7 @@ import {
 import {
   executeCommercialTransaction,
   computeRegionalFinesAndClaims,
-  resolveConsumableWear
+  resolvePostRaidClients
 } from './engine/economyEngine';
 
 const WORKSPACE_NAV_ITEMS: Array<{ id: WorkspaceTab; label: string; shortLabel: string }> = [
@@ -422,45 +422,8 @@ export default function App() {
       const inventoryVal = prev.products.reduce((acc, p) => acc + p.stock * p.productionCost, 0);
       const netWorth = endingCash + inventoryVal - nextDebt;
 
-      // Update Master & Party memory + budgets + consumable wear from shared economyEngine (A03)
-      const wear = resolveConsumableWear(
-        party,
-        master,
-        report.warrantyClaimsTriggered,
-        prev.day,
-        skillKeys
-      );
-
-      const nextMasters = prev.masters.map((m) => {
-        if (m.id === master.id) {
-          const lastRoom = report.rooms[report.rooms.length - 1];
-          return {
-            ...m,
-            budget: Math.max(450, m.budget + report.masterTreasuryDelta + 320),
-            installedHazards: wear.nextInstalled,
-            installedResetCharges: wear.nextResetCharges,
-            memoryLog: [...m.memoryLog, `Day ${prev.day} After-Action: ${lastRoom.learnedByMaster}`],
-            desiredTrait: report.doubleSaleDemandCreated[0] || m.desiredTrait
-          };
-        }
-        return { ...m, budget: m.budget + 180 };
-      });
-
-      const nextParties = prev.parties.map((p) => {
-        if (p.id === party.id) {
-          const lastRoom = report.rooms[report.rooms.length - 1];
-          return {
-            ...p,
-            budget: Math.max(420, p.budget + report.partyBudgetDelta + 290),
-            trust: Math.max(15, p.trust - report.warrantyClaimsTriggered * 12),
-            equippedProducts: wear.nextEquipped,
-            memoryLog: [...p.memoryLog, `Day ${prev.day} After-Action: ${lastRoom.learnedByHeroes}`],
-            desiredCounter:
-              report.doubleSaleDemandCreated.find((d) => d.includes(p.name)) || p.desiredCounter
-          };
-        }
-        return { ...p, budget: p.budget + 160 };
-      });
+      // Shared breach, warranty, budget, loadout and memory consequences.
+      const { masters: nextMasters, parties: nextParties } = resolvePostRaidClients(prev, report);
 
       // Generate new Morning Intel item from actual causal expedition outcome
       const newFact = {

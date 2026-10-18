@@ -6,6 +6,7 @@ import {
   AdventuringParty,
   SaleContract,
   RegionId,
+  ExpeditionReport,
   CounterClass
 } from '../types/game';
 import { DeterministicRNG } from '../utils/prng';
@@ -377,6 +378,39 @@ export function resolveConsumableWear(
     nextInstalled,
     nextResetCharges,
     rewindsSpent
+  };
+}
+
+/** One post-raid client transition for UI and campaigns. Apply breach once, then warranty loss. */
+export function resolvePostRaidClients(
+  state: Pick<GameSaveState, 'masters' | 'parties' | 'skills'>,
+  report: ExpeditionReport
+): Pick<GameSaveState, 'masters' | 'parties'> {
+  const master = state.masters.find(m => m.id === report.masterId);
+  const party = state.parties.find(p => p.id === report.partyId);
+  const lastRoom = report.rooms.at(-1);
+  if (!master || !party || !lastRoom) throw new Error('Cannot settle an expedition without its clients and rooms.');
+  const skills = state.skills.filter(s => s.unlocked).map(s => s.effectKey);
+  const wear = resolveConsumableWear(party, master, report.warrantyClaimsTriggered, report.day, skills);
+  const breachTrust = (trust: number) => report.exclusivityBreachDetected ? Math.max(15, trust - 8) : trust;
+  return {
+    masters: state.masters.map(m => m.id === master.id ? {
+      ...m,
+      trust: breachTrust(m.trust),
+      budget: Math.max(450, m.budget + report.masterTreasuryDelta + 320),
+      installedHazards: wear.nextInstalled,
+      installedResetCharges: wear.nextResetCharges,
+      memoryLog: [...m.memoryLog, `Day ${report.day} After-Action: ${lastRoom.learnedByMaster}`],
+      desiredTrait: report.doubleSaleDemandCreated[0] || m.desiredTrait
+    } : { ...m, budget: m.budget + 180 }),
+    parties: state.parties.map(p => p.id === party.id ? {
+      ...p,
+      trust: Math.max(15, breachTrust(p.trust) - report.warrantyClaimsTriggered * 12),
+      budget: Math.max(420, p.budget + report.partyBudgetDelta + 290),
+      equippedProducts: wear.nextEquipped,
+      memoryLog: [...p.memoryLog, `Day ${report.day} After-Action: ${lastRoom.learnedByHeroes}`],
+      desiredCounter: report.doubleSaleDemandCreated.find(d => d.includes(p.name)) || p.desiredCounter
+    } : { ...p, budget: p.budget + 160 })
   };
 }
 
