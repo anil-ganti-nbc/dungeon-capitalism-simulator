@@ -8,7 +8,7 @@ import { runSingleCampaign } from '../src/engine/campaignRunner';
 import { computeQuotation } from '../src/engine/economyEngine';
 import { GameSaveState } from '../src/types/game';
 
-const out=process.env.EVIDENCE_DIR??'artifacts/d01-d04/raid';fs.mkdirSync(out,{recursive:true});
+const out=process.env.EVIDENCE_DIR??'artifacts/sim002b/raid';fs.mkdirSync(out,{recursive:true});
 const url=process.env.TEST_URL??'http://127.0.0.1:4178';
 const browser=await chromium.launch({headless:true,executablePath:process.env.BROWSER_PATH||undefined});
 const records:any[]=[];const errors:string[]=[];

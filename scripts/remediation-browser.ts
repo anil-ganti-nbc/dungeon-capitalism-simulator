@@ -4,16 +4,18 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 import { chromium, Page } from 'playwright';
 import { GameSaveState } from '../src/types/game';
-import { normalizeLoadedSave, SAVE_STORAGE_KEY, SAVE_BACKUP_KEY, QUARANTINE_KEY } from '../src/engine/saveManager';
+import { createInitialSaveState, normalizeLoadedSave, SAVE_STORAGE_KEY, SAVE_BACKUP_KEY, QUARANTINE_KEY } from '../src/engine/saveManager';
+import { TRAP_PARTS_CATALOG } from '../src/data/catalog';
+import { assembleTrapProduct } from '../src/engine/simulation';
 
-const out=process.env.EVIDENCE_DIR??'artifacts/d01-d04/browser';fs.mkdirSync(out,{recursive:true});
+const out=process.env.EVIDENCE_DIR??'artifacts/sim002b/remediation';fs.mkdirSync(out,{recursive:true});
 const browser=await chromium.launch({headless:true,executablePath:process.env.BROWSER_PATH||undefined});
 const url=process.env.TEST_URL??'http://127.0.0.1:4178';const results:any[]=[];const errors:string[]=[];
 const read=(p:Page):Promise<GameSaveState>=>p.evaluate(()=>JSON.parse(localStorage.getItem('trap_and_tonic_save_v2')!));
 const write=(name:string,data:any)=>fs.writeFileSync(path.join(out,name+'.json'),JSON.stringify(data,null,2));
 async function boot(keys:Record<string,string>={}){
   // Diagnostic save/UI checks are isolated from dev-worker reloads; production PWA is tested separately.
-  const c=await browser.newContext({viewport:{width:1440,height:1000},serviceWorkers:'block'});
+  const c=await browser.newContext({viewport:{width:1440,height:1000},serviceWorkers:process.env.ALLOW_SERVICE_WORKERS==='1'?'allow':'block'});
   await c.addInitScript(data=>{if(!sessionStorage.getItem('__setup')){for(const[k,v]of Object.entries(data))localStorage.setItem(k,v);sessionStorage.setItem('__setup','1');}},keys);
   const p=await c.newPage();p.on('pageerror',e=>errors.push(e.message));await p.goto(url);await p.getByRole('button',{name:/^(Open Merchant Ledger|Continue Ledger)/}).click();await p.waitForTimeout(50);return{c,p};
 }
@@ -68,6 +70,24 @@ try{
       assert.equal(crafted.products.find(q=>q.id===ordinary.id)!.stock,ordinary.stock);assert.deepEqual(reloaded,afterRaid);
       const enhancedRooms=afterRaid.expeditionReports[0].rooms.filter(r=>r.hazardId===enhanced.id);assert(enhancedRooms.length>0);assert(enhancedRooms.every(r=>r.causalExplanation.includes('DC 33')));
       assert.deepEqual(afterRaid.masters.find(m=>m.id==='dm_cellar_1')!.installedHazards,paid.masters.find(m=>m.id==='dm_cellar_1')!.installedHazards,'existing cam wear immunity must remain unchanged');
+    }finally{await c.close();}
+  });
+  for(const mass of [19,21,25,54,86])await check(`D04-${mass}kg-description-preview-live`,async()=>{
+    const s=createInitialSaveState(20261018+mass);s.unlockedRegions=['cellar','warrens','blackspire','vault'];s.expertUnlocked=true;
+    s.masters[0].installedHazards=[];s.masters[0].installedResetCharges=[];s.masters[0].budget=9999;s.parties[0].equippedProducts=[];s.parties[0].members[0].massKg=mass;
+    const tuple=['part_trg_12','part_con_01','part_del_01','part_pay_01','part_pow_01','part_rst_01'].map(id=>TRAP_PARTS_CATALOG.find(p=>p.id===id)!);
+    const trap=Reflect.apply(assembleTrapProduct,undefined,[tuple,'D04 Mass Sensor',false,false]);s.products.push(trap);
+    const{c,p}=await boot({[SAVE_STORAGE_KEY]:JSON.stringify(s)});
+    try{
+      await p.getByRole('button',{name:'Trap Workshop',exact:true}).click();await p.locator('select').nth(0).selectOption('part_trg_12');
+      const module=TRAP_PARTS_CATALOG.find(p=>p.id==='part_trg_12')!,description=await p.getByText(module.description,{exact:true}).first().innerText();
+      const row=p.locator(`[data-mass-calibration="${mass}"]`),preview=await row.count()?await row.innerText():null;
+      await p.getByText('Trigger Calibration:',{exact:false}).scrollIntoViewIfNeeded();await p.screenshot({path:path.join(out,`D04-${mass}-preview.png`)});
+      await p.getByRole('button',{name:'Bilateral Desk',exact:true}).click();await p.getByText(trap.name+' [#'+trap.formulaSignature+']',{exact:true}).locator('../..').getByRole('button').click();
+      const paid=await read(p);await p.getByRole('button',{name:/^Run Scheduled Expedition/}).click();await p.waitForFunction(()=>JSON.parse(localStorage.getItem('trap_and_tonic_save_v2')!).day===2);const after=await read(p);
+      write(`D04-${mass}`,{setup:'Diagnostic existing Expert module and controlled mass; actual paid UI sale and raid',fixture:s,description,preview,paid,after});await p.screenshot({path:path.join(out,`D04-${mass}-raid.png`)});
+      assert.equal(description,'Triggers only on intruders under 25kg; intruders of 25kg or more bypass this sensor.');assert(preview?.includes(mass<25?'TRIGGERS SENSOR':'BYPASSES SENSOR'));
+      assert.equal(paid.products.find(q=>q.id===trap.id)!.stock,trap.stock-1);const report=after.expeditionReports[0];assert.equal(report.rooms.length,3);assert(report.rooms.every(r=>r.heroEffectiveMassKg===mass&&r.outcome===(mass<25?'TRAP_TRIGGERED':'TRAP_BYPASSED')));
     }finally{await c.close();}
   });
   assert.deepEqual(errors,[]);

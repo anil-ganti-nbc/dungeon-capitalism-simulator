@@ -5,7 +5,7 @@ import zlib from 'node:zlib';
 import { resolvePostRaidClients, computeQuotation, resolveConsumableWear } from '../src/engine/economyEngine';
 import { GameSaveState, ExpeditionReport } from '../src/types/game';
 import { runSingleCampaign } from '../src/engine/campaignRunner';
-import { assembleTrapProduct, simulateRegionExpedition } from '../src/engine/simulation';
+import { assembleTrapProduct, simulateRegionExpedition, isTrapTriggeredByMass } from '../src/engine/simulation';
 import { TRAP_PARTS_CATALOG } from '../src/data/catalog';
 import { createInitialSaveState, validateSavePayload, loadGameWithRecovery, persistAtomicSaveSafe,
   SAVE_STORAGE_KEY, SAVE_BACKUP_KEY, QUARANTINE_KEY } from '../src/engine/saveManager';
@@ -64,6 +64,17 @@ test('D03 preserves existing global wear immunity, including warranty wear and s
   const master={...s.masters[0],installedHazards:[trap.id],installedResetCharges:[1]};
   const before=structuredClone(master),wear=resolveConsumableWear(s.parties[0],master,3,3,['auto_reset_cam']);
   assert.deepEqual(wear.nextInstalled,[trap.id]);assert.deepEqual(wear.nextResetCharges,[1]);assert.equal(wear.rewindsSpent,0);assert.deepEqual(master,before);
+});
+test('D04 inversion module text matches the existing under-25kg predicate, without a heavy trigger',()=>{
+  const module=TRAP_PARTS_CATALOG.find(p=>p.id==='part_trg_12')!;
+  assert.equal(module.description,'Triggers only on intruders under 25kg; intruders of 25kg or more bypass this sensor.');
+});
+for(const mass of [19,21,25,54,86])test(`D04 ${mass}kg: shared workshop assessor and actual raid keep the approved boundary`,()=>{
+  const s=createInitialSaveState(),trap=Reflect.apply(assembleTrapProduct,undefined,[parts(['part_trg_12',...defaultPartIds.slice(1)]),'Inversion boundary',false,false]);
+  s.parties[0].members[0].massKg=mass;s.parties[0].equippedProducts=[];
+  assert.equal(isTrapTriggeredByMass(trap,mass),mass<25);
+  const report=simulateRegionExpedition(1,s.seed,{...s.masters[0],installedHazards:[trap.id]},s.parties[0],[...s.products,trap],[]);
+  assert.equal(report.rooms.length,3);assert(report.rooms.every(r=>r.heroEffectiveMassKg===mass&&r.outcome===(mass<25?'TRAP_TRIGGERED':'TRAP_BYPASSED')));
 });
 class RepairStorage {
   data=new Map<string,string>(); writes=0; failAt=-1;

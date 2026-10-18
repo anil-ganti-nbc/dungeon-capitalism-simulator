@@ -723,7 +723,7 @@ export const TRAP_PARTS_CATALOG: TrapPart[] = [
     deterrence: 90,
     damageType: 'arcane',
     counterplayRoutes: ['disruption', 'sabotage'],
-    description: 'Triggers on BOTH heavy (>50kg) and abnormally light (<25kg) intruders, punishing standard featherweight tricks.'
+    description: 'Triggers only on intruders under 25kg; intruders of 25kg or more bypass this sensor.'
   },
 
   // === CONCEALMENT (10) ===

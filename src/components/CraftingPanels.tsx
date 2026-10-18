@@ -591,24 +591,18 @@ export const TrapWorkshopPanel: React.FC<TrapWorkshopProps> = ({
             <div className="font-mono text-slate-300 mb-1.5">
               Trigger Calibration: {previewTrap.recipeComponents.includes('part_trg_12') ? 'Inversion: under 25kg' : `${previewTrap.triggerMassThresholdKg}kg floor threshold`}
             </div>
-            <div className="flex items-center justify-between text-slate-400 font-mono tabular-nums py-1 border-b border-slate-800/70">
-              <span>Standard Vanguard (~86kg):</span>
-              <span className="font-semibold">{isTrapTriggeredByMass(previewTrap, 86) ? 'TRIGGERS TRAP' : 'BYPASSES SENSOR'}</span>
-            </div>
-            <div className="flex items-center justify-between text-slate-400 font-mono tabular-nums py-1">
-              <span>Chicken-Morphed Hero (~21kg):</span>
-              <span
-                className={
-                  !isTrapTriggeredByMass(previewTrap, 21)
-                    ? 'text-emerald-400 font-semibold'
-                    : 'text-rose-400 font-semibold'
-                }
-              >
-                {!isTrapTriggeredByMass(previewTrap, 21)
-                  ? 'BYPASSES PLATE (<Threshold!)'
-                  : 'TRIGGERS SENSOR'}
-              </span>
-            </div>
+            {[19, 21, 25, 54, 86].map(mass => {
+              const triggers = isTrapTriggeredByMass(previewTrap, mass);
+              const label = mass === 86 ? 'Standard Vanguard (~86kg)' : mass === 21 ? 'Chicken-Morphed Hero (~21kg)' : `Calibration hero (${mass}kg)`;
+              return (
+                <div key={mass} data-mass-calibration={mass} className="flex items-center justify-between gap-2 text-slate-400 font-mono tabular-nums py-1 border-b border-slate-800/70">
+                  <span>{label}:</span>
+                  <span className={triggers ? 'text-rose-400 font-semibold' : 'text-emerald-400 font-semibold'}>
+                    {triggers ? 'TRIGGERS SENSOR' : 'BYPASSES SENSOR'}
+                  </span>
+                </div>
+              );
+            })}
           </div>
 
           <div className="space-y-1.5 text-xs text-slate-300">
