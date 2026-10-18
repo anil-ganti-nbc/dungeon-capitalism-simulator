@@ -5,6 +5,8 @@ import zlib from 'node:zlib';
 import { resolvePostRaidClients, computeQuotation } from '../src/engine/economyEngine';
 import { GameSaveState, ExpeditionReport } from '../src/types/game';
 import { runSingleCampaign } from '../src/engine/campaignRunner';
+import { createInitialSaveState, validateSavePayload, loadGameWithRecovery, persistAtomicSaveSafe,
+  SAVE_STORAGE_KEY, SAVE_BACKUP_KEY, QUARANTINE_KEY } from '../src/engine/saveManager';
 
 const reviewer=JSON.parse(zlib.gunzipSync(fs.readFileSync(new URL('./fixtures/d01-d04/reviewer-breach.json.gz',import.meta.url))).toString()) as {before:GameSaveState;report:ExpeditionReport};
 test('D01 reviewer breach: shared -8 once, budgets/loadouts/memory preserved and quotes agree',()=>{
@@ -22,6 +24,55 @@ test('D01 reviewer breach: shared -8 once, budgets/loadouts/memory preserved and
     const product=before.products.find(p=>p.id===before.contractsToday.find(c=>c.buyerType===type)!.productId)!;
     const options={...before.tradeTerms!,seed:before.seed,day:report.day+1,unlockedSkills:before.skills.filter(s=>s.unlocked).map(s=>s.effectKey)};
     assert.deepEqual(computeQuotation(product,actual[clients].find((c:any)=>c.id===id),type,options),computeQuotation(product,settled[clients].find(c=>c.id===id)!,type,options));
+  }
+});
+class RepairStorage {
+  data=new Map<string,string>(); writes=0; failAt=-1;
+  getItem(k:string){return this.data.get(k)??null;}
+  setItem(k:string,v:string){if(++this.writes===this.failAt)throw Error('interrupted');this.data.set(k,v);}
+}
+const invalidResources:Record<string,(s:GameSaveState)=>void>={
+  '200 doses':s=>{s.parties[0].equippedProducts=Array(200).fill(s.products[0].id);},
+  'fifth dose':s=>{s.parties[0].equippedProducts=Array(5).fill(s.products[0].id);},
+  'fourth installation':s=>{s.masters[0].installedHazards=Array(4).fill(s.products[5].id);s.masters[0].installedResetCharges=[0,0,0,0];},
+  'unknown reagent':s=>{s.reagentInventory.reg_not_in_catalog=1;},
+  'unknown part':s=>{s.partInventory.part_not_in_catalog=0;},
+  'unknown recipe input':s=>{s.products[0].recipeComponents.push('invented_component');},
+  'unknown equipped SKU':s=>{s.parties[0].equippedProducts=['unknown_SKU'];},
+  'unaligned reset slots':s=>{s.masters[0].installedResetCharges=[];},
+  'fractional reset reserve':s=>{s.masters[0].installedResetCharges=[0.5];},
+  'excess reset reserve':s=>{s.masters[0].installedResetCharges=[2];},
+  'reset on non-temporal item':s=>{s.masters[0].installedResetCharges=[1];}
+};
+for(const [label,damage] of Object.entries(invalidResources))test(`D02 rejects ${label} before rotating either checkpoint`,()=>{
+  const good=createInitialSaveState(),bad=structuredClone(good);damage(bad);const raw=JSON.stringify(bad);
+  assert.equal(validateSavePayload(raw).valid,false);
+  const st=new RepairStorage();const checkpoint=JSON.stringify(good);st.setItem(SAVE_STORAGE_KEY,checkpoint);st.setItem(SAVE_BACKUP_KEY,checkpoint);
+  assert.equal(persistAtomicSaveSafe(bad,st as any),false);assert.equal(st.getItem(SAVE_STORAGE_KEY),checkpoint);assert.equal(st.getItem(SAVE_BACKUP_KEY),checkpoint);
+  st.data.set(SAVE_STORAGE_KEY,raw);
+  const loaded=loadGameWithRecovery(st as any);assert.equal(loaded.source,'BACKUP');assert.deepEqual(loaded.state,good);
+  assert([...st.data].some(([k,v])=>k.startsWith(QUARANTINE_KEY)&&v===raw),'original rejected text must remain recoverable');
+  assert.equal(st.getItem(SAVE_BACKUP_KEY),checkpoint);
+});
+test('D02 bad outgoing data and interrupted writes preserve checkpoints and original in-memory input',()=>{
+  for(const failure of [1,2,3]){
+    const good=createInitialSaveState(),bad=structuredClone(good);bad.parties[0].equippedProducts=Array(200).fill(good.products[0].id);
+    const st=new RepairStorage(),raw=JSON.stringify(good);st.data.set(SAVE_STORAGE_KEY,raw);st.data.set(SAVE_BACKUP_KEY,raw);st.failAt=failure;
+    assert.equal(persistAtomicSaveSafe(bad,st as any),false);assert.equal(st.getItem(SAVE_STORAGE_KEY),raw);assert.equal(st.getItem(SAVE_BACKUP_KEY),raw);assert.equal(bad.parties[0].equippedProducts.length,200);
+  }
+});
+test('D02 reviewer-played historical Day5 v1/v2 resources restore across every existing slot',()=>{
+  const fixtures=JSON.parse(zlib.gunzipSync(fs.readFileSync(new URL('./fixtures/d01-d04/reviewer-historical-day5.json.gz',import.meta.url))).toString());
+  assert.equal(fixtures.length,2);
+  for(const f of fixtures)for(const slot of ['trap_and_tonic_save_v2','trap_and_tonic_save_v2_backup','trap_and_tonic_backup_v2','trap_and_tonic_save_v1_backup','trap_and_tonic_save_v1']){
+    const original=JSON.parse(f.raw),st=new RepairStorage();if(slot!==SAVE_STORAGE_KEY)st.data.set(SAVE_STORAGE_KEY,'{bad');st.data.set(slot,f.raw);
+    const restored=loadGameWithRecovery(st as any).state;
+    for(const key of ['day','gold','debt','products','masters','parties','reagentInventory','partInventory','contractHistory','financialLedger','catalystLedger','expertUnlocked'] as const){
+      // Historical masters acquire only the explicitly versioned reset-slot field.
+      if(key==='masters'){for(const m of original.masters)assert.deepEqual({...restored.masters.find(r=>r.id===m.id),installedResetCharges:undefined},{...m,installedResetCharges:undefined});}
+      else assert.deepEqual(restored[key],original[key]);
+    }
+    assert.equal(st.getItem(slot),f.raw);
   }
 });
 test('D01 adversarial trust floors: breach precedes warranty loss, unrelated clients never penalised',()=>{

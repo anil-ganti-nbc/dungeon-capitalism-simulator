@@ -1,5 +1,5 @@
 import { GameSaveState } from '../types/game';
-import { INITIAL_PRODUCTS } from '../data/catalog';
+import { INITIAL_PRODUCTS, REAGENTS_CATALOG, TRAP_PARTS_CATALOG } from '../data/catalog';
 import { hashString } from '../utils/prng';
 import { createInitialSaveState } from './initialState';
 export { createInitialSaveState } from './initialState';
@@ -19,6 +19,8 @@ export interface SaveLoadResult {
   recovered: boolean; notice?: string; writeBlocked?: boolean;
 }
 const regions = ['cellar', 'warrens', 'blackspire', 'vault'];
+const reagentIds = new Set(REAGENTS_CATALOG.map(r => r.id));
+const partIds = new Set(TRAP_PARTS_CATALOG.map(p => p.id));
 function ensure(ok: unknown, path: string): asserts ok { if (!ok) throw new Error(`Invalid save: ${path}`); }
 function object(x: any) { return x !== null && typeof x === 'object' && !Array.isArray(x); }
 function finite(x: any) { return typeof x === 'number' && Number.isFinite(x); }
@@ -78,7 +80,8 @@ function validateState(s: GameSaveState) {
   ensure(strings(s.unlockedRegions) && s.unlockedRegions.length > 0 && s.unlockedRegions.every(r => regions.includes(r)) && s.unlockedRegions.includes(s.activeRegion), 'regions');
   ensure(['NONE','HONEST_BROKER','CARTEL_SYNDICATE','PARTISAN_ARMOURER','CALCULATED_CHAOS'].includes(s.blackspireResolution), 'resolution');
   for (const k of ['reagentInventory','partInventory'] as const) {
-    ensure(object(s[k]) && Object.entries(s[k]).every(([id,n]) => id.length > 0 && count(n)), k);
+    const knownIds = k === 'reagentInventory' ? reagentIds : partIds;
+    ensure(object(s[k]) && Object.entries(s[k]).every(([id,n]) => knownIds.has(id) && count(n)), `${k}: unknown identifier or invalid quantity`);
   }
   ensure(Array.isArray(s.products) && s.products.length > 0, 'products');
   for (const p of s.products) {
@@ -89,6 +92,7 @@ function validateState(s: GameSaveState) {
     ensure(['HERO','MASTER','BOTH'].includes(p.targetAudience), 'product audience');
     ensure(['TONIC_HERO','COUNTER_GEAR','TRAP_MASTER','HAZARD_MONSTER','DUAL_SOLVENT'].includes(p.category), 'product category');
     for (const k of ['counterClasses','recipeComponents','reactionNotes'] as const) ensure(strings(p[k]), `product.${k}`);
+    ensure(p.recipeComponents.every(id => reagentIds.has(id) || partIds.has(id)), 'product recipe references');
     ensure(p.counterClasses.every(c => ['detection','disruption','resistance','bypass_mass','sabotage','routing','filtration'].includes(c)), 'counter classes');
     for (const k of ['formulaSignature','rulesVersion'] as const) if (p[k] !== undefined) ensure(typeof p[k] === 'string', `product.${k}`);
     if (p.appliedSkills !== undefined) ensure(strings(p.appliedSkills), 'applied skills');
@@ -110,8 +114,10 @@ function validateState(s: GameSaveState) {
           ensure(['Vanguard','Alchemist','Scout','Arcanist'].includes(m.role) && ['Healthy','Petrified','Poisoned','Recovering'].includes(m.status), 'member enums');
         }
         ensure(strings(c.observedTraps) && strings(c.equippedProducts) && c.equippedProducts.every(id => sku.has(id)), 'party SKU references');
+        ensure(c.equippedProducts.length <= 4, 'party loadout exceeds four charges');
       } else {
         ensure(strings(c.knownHeroCounters) && strings(c.installedHazards) && c.installedHazards.every(id => sku.has(id)), 'master SKU references');
+        ensure(c.installedHazards.length <= 3, 'master loadout exceeds three installations');
         ensure(count(c.catalystCommissionStage), 'commission stage');
         ensure(Array.isArray(c.installedResetCharges) && c.installedResetCharges.length === c.installedHazards.length && c.installedResetCharges.every((n,i) => count(n) && n <= 1 && (n === 0 || s.products.find(p=>p.id===c.installedHazards[i])?.recipeComponents.includes('part_rst_09'))), 'temporal slot charges');
       }
@@ -192,8 +198,9 @@ export function loadGameWithRecovery(storage: Storage = localStorage): SaveLoadR
 }
 export function persistAtomicSaveSafe(state: GameSaveState, storage: Storage = localStorage): boolean {
   try {
-    const outgoing = validateSavePayload(JSON.stringify(state));
-    if (!outgoing.valid) return false;
+    const original = JSON.stringify(state);
+    const outgoing = validateSavePayload(original);
+    if (!outgoing.valid) { quarantinePayload(storage, original); return false; }
     const serialized = JSON.stringify(outgoing.state);
     const previous = storage.getItem(SAVE_STORAGE_KEY);
     if (previous === serialized) return true;
