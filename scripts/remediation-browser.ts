@@ -79,7 +79,15 @@ try{
     const trap=Reflect.apply(assembleTrapProduct,undefined,[tuple,'D04 Mass Sensor',false,false]);s.products.push(trap);
     const{c,p}=await boot({[SAVE_STORAGE_KEY]:JSON.stringify(s)});
     try{
-      await p.getByRole('button',{name:'Trap Workshop',exact:true}).click();await p.locator('select').nth(0).selectOption('part_trg_12');
+      await p.getByRole('button',{name:'Trap Workshop',exact:true}).click();
+      const sensor=p.locator('select').nth(0);
+      const ordinaryLabel=await sensor.locator('option[value="part_trg_01"]').innerText();
+      await sensor.selectOption('part_trg_12');
+      const selectedLabel=await sensor.locator('option:checked').innerText();
+      write(`D04-${mass}-selector`,{ordinaryLabel,selectedLabel});
+      await p.screenshot({path:path.join(out,`D04-${mass}-selector.png`)});
+      assert.equal(ordinaryLabel,'Rusted Iron Pressure Plate (45kg) (20g · DC 28 · Leth 10 · >=45kg)');
+      assert.equal(selectedLabel,'Paradox Mass-Inversion Plate (168g · DC 92 · Leth 48 · <25kg)');
       const module=TRAP_PARTS_CATALOG.find(p=>p.id==='part_trg_12')!,description=await p.getByText(module.description,{exact:true}).first().innerText();
       const row=p.locator(`[data-mass-calibration="${mass}"]`),preview=await row.count()?await row.innerText():null;
       await p.getByText('Trigger Calibration:',{exact:false}).scrollIntoViewIfNeeded();await p.screenshot({path:path.join(out,`D04-${mass}-preview.png`)});

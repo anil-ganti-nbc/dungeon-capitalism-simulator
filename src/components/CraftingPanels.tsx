@@ -509,7 +509,7 @@ export const TrapWorkshopPanel: React.FC<TrapWorkshopProps> = ({
                     {slot.list.map((p) => (
                       <option key={p.id} value={p.id}>
                         {p.name} ({p.baseCost}g · DC {p.detectionDC} · Leth {p.lethality}
-                        {p.massThresholdKg !== undefined ? ` · >=${p.massThresholdKg}kg` : ''})
+                        {p.massThresholdKg !== undefined ? ` · ${p.id === 'part_trg_12' ? '<' : '>='}${p.massThresholdKg}kg` : ''})
                       </option>
                     ))}
                   </select>
