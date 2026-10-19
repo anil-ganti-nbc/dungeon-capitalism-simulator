@@ -186,7 +186,15 @@ export interface DailyMarketContext {
   factor: number;
 }
 
+export interface InstallationReplacementReceipt {
+  slotIndex: number;
+  retiredProductId: string;
+  retiredProductName: string;
+  retiredResetCharge: number;
+}
+
 export interface SaleContract {
+  installationReplacement?: InstallationReplacementReceipt;
   marketContext?: DailyMarketContext;
   id: string;
   day: number;

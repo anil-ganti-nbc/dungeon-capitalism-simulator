@@ -145,6 +145,14 @@ function validateState(s: GameSaveState) {
     for (const c of xs) {
       fields(c,contract,'contract'); ensure(count(c.day) && c.day > 0 && count(c.quantity) && c.quantity > 0 && c.unitPrice >= 0 && c.unitCost >= 0 && c.totalRevenue === c.quantity*c.unitPrice, 'contract values');
       ensure(sku.has(c.productId) && (c.buyerType === 'MASTER' ? s.masters : c.buyerType === 'HERO' ? s.parties : []).some(b => b.id === c.buyerId), 'contract references');
+      if (c.installationReplacement !== undefined) {
+        const r = c.installationReplacement;
+        ensure(object(r), 'replacement receipt');
+        ensure(c.buyerType === 'MASTER' && c.quantity === 1 && count(r.slotIndex) && r.slotIndex < 3, 'replacement slot/buyer');
+        ensure(typeof r.retiredProductId === 'string' && sku.has(r.retiredProductId) && r.retiredProductId !== c.productId, 'replacement retired reference');
+        ensure(typeof r.retiredProductName === 'string' && r.retiredProductName.trim().length > 0, 'replacement retired name');
+        ensure(count(r.retiredResetCharge) && r.retiredResetCharge <= 1 && (r.retiredResetCharge === 0 || s.products.find(p => p.id === r.retiredProductId)?.recipeComponents.includes('part_rst_09')), 'replacement retired reserve');
+      }
       if (c.marketContext) market(c.marketContext);
     } unique(xs,'contracts');
   }

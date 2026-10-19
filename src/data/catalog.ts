@@ -1720,9 +1720,9 @@ export const INITIAL_PRODUCTS: CraftedProduct[] = [
   }
 ];
 
-// Generate the full 128 Blueprint Registry (9 curated flagship + 119 systemic combinations across all 4 regions)
+// Counts authored catalogue products only. Craftable tuples are not an authored blueprint registry.
 export function getBlueprintCatalogCount(): number {
-  return 132;
+  return new Set(INITIAL_PRODUCTS.map(product => product.id)).size;
 }
 
 export const SKILL_TREE_NODES: SkillNode[] = [

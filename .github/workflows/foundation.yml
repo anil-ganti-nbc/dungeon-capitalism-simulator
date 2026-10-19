@@ -19,7 +19,7 @@ jobs:
           npm run dev -- --port 4178 --host 127.0.0.1 > /tmp/dev.log 2>&1 &
           npm run preview -- --port 4179 --host 127.0.0.1 > /tmp/preview.log 2>&1 &
           node -e "async function wait(url){for(let i=0;i<100;i++){try{if((await fetch(url)).ok)return}catch{}await new Promise(r=>setTimeout(r,200))}throw Error(url)};await Promise.all([wait('http://127.0.0.1:4178'),wait('http://127.0.0.1:4179')])"
-      - run: npm run test:browser && npm run test:negative && npm run test:offline
+      - run: npm run test:browser && npm run test:replacement && npm run test:negative && npm run test:offline
       - run: npx tsx scripts/remediation-browser.ts
         env:
           TEST_URL: http://127.0.0.1:4179
@@ -39,3 +39,5 @@ jobs:
             artifacts/sim002b/raid/*
             artifacts/sim002b/remediation/*
             artifacts/sim002b/production-remediation/*
+            artifacts/paid-replacement/*.json
+            artifacts/paid-replacement/*.png
