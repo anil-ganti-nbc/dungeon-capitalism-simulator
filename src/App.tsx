@@ -35,6 +35,7 @@ import {
   predictExpeditionForecast,
   verifyAndParseCatalystCode
 } from './engine/simulation';
+import { recordCompletedEncounter, declineRenewal, mergeCraftedInventoryState } from './engine/encounterRenewal';
 import { hashString } from './utils/prng';
 import { soundFX } from './utils/sound';
 import { TitleScreen } from './components/TitleScreen';
@@ -241,15 +242,15 @@ export default function App() {
           }
         });
 
-        const nextProducts = mergeCraftedProductIntoInventory(prev.products, product, batchSize);
+        const craftedState = mergeCraftedInventoryState(prev, product, batchSize);
 
         return {
-          ...prev,
+          ...craftedState,
           phase: 'PREPARATION',
           gold: prev.gold - spotCost,
           customBrewsCount: prev.customBrewsCount + 1,
           reagentInventory: nextReagents,
-          products: nextProducts
+          products: craftedState.products
         };
       });
       setStatusBanner(
@@ -273,15 +274,15 @@ export default function App() {
           }
         });
 
-        const nextProducts = mergeCraftedProductIntoInventory(prev.products, trapProduct, 2);
+        const craftedState = mergeCraftedInventoryState(prev, trapProduct, 2);
 
         return {
-          ...prev,
+          ...craftedState,
           phase: 'PREPARATION',
           gold: prev.gold - spotCost,
           customTrapsCount: prev.customTrapsCount + 1,
           partInventory: nextParts,
-          products: nextProducts
+          products: craftedState.products
         };
       });
       setStatusBanner(
@@ -456,7 +457,7 @@ export default function App() {
         affectedTag: 'expedition_consequence'
       };
 
-      return {
+      return recordCompletedEncounter(prev, {
         ...prev,
         day: prev.day + 1,
         phase: 'EVENING',
@@ -495,7 +496,7 @@ export default function App() {
           },
           ...prev.financialLedger
         ]
-      };
+      }, report);
     });
 
     setActiveRoomIdx(0);
@@ -1007,6 +1008,8 @@ export default function App() {
         {activeTab === 'DAY_DESK' && (
           <TradeFloorPanel
             replacementState={gameState}
+            onDeclineRenewal={id => setGameState(prev => declineRenewal(prev, id))}
+            replacementNotice={statusBanner}
             onReplaceInstallation={handleReplaceInstallation}
             day={gameState.day}
             seed={gameState.seed}

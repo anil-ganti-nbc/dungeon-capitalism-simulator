@@ -13,8 +13,11 @@ import { REGIONS_DATA } from '../data/world';
 import { computeQuotation } from '../engine/economyEngine';
 import { GameSaveState } from '../types/game';
 import { InstallationReplacementPanel, PaidReplacementOffer } from './InstallationReplacementPanel';
+import { EncounterRenewalPanel } from './EncounterRenewalPanel';
 
 interface TradeFloorProps {
+  onDeclineRenewal: (id: string) => void;
+  replacementNotice: string;
   replacementState: GameSaveState;
   onReplaceInstallation: (offer: PaidReplacementOffer) => void;
   day: number;
@@ -58,6 +61,8 @@ interface TradeFloorProps {
 
 export const TradeFloorPanel: React.FC<TradeFloorProps> = ({
   replacementState,
+  onDeclineRenewal,
+  replacementNotice,
   onReplaceInstallation,
   day,
   seed,
@@ -350,6 +355,9 @@ export const TradeFloorPanel: React.FC<TradeFloorProps> = ({
                 })
               )}
             </div>
+            <EncounterRenewalPanel state={replacementState} master={activeMaster} onConfirm={onReplaceInstallation} onDecline={onDeclineRenewal}
+              terms={{ priceMultiplier: pricePct / 100, warrantyBacked: warranty, exclusiveDeal: exclusive, secretProvenance: secretMark }} />
+            <p role="status" className="text-base text-slate-100 break-words">{replacementNotice}</p>
             <InstallationReplacementPanel
               key={`${replacementState.day}:${activeMaster.id}:${replacementState.contractHistory.length}`}
               state={replacementState} master={activeMaster}

@@ -187,6 +187,7 @@ export interface DailyMarketContext {
 }
 
 export interface InstallationReplacementReceipt {
+  renewal?: { requestId: string; occurrenceId: string; evidence: RenewalEvidence };
   slotIndex: number;
   retiredProductId: string;
   retiredProductName: string;
@@ -232,7 +233,37 @@ export interface ExpeditionRoomEvent {
   learnedByMaster: string;
 }
 
+export interface InstallationMechanics {
+  potency: number; detectionDC: number; threshold: number;
+  inversion: boolean; temporal: boolean; petrification: boolean; fog: boolean; sabotage: boolean;
+}
+export interface EncounterObservation {
+  sourceSlotIndex: number | null; hazardId: string; mechanics: InstallationMechanics;
+  effectiveMassKg: number; baseMassKg: number;
+  counter: { kind: 'NATURAL_MASS' } | { kind: 'MORPH'; productId: string; massEffectKg: number };
+  triggersByMass: boolean; outcome: ExpeditionRoomEvent['outcome']; roomIndex: number;
+}
+export interface RenewalEvidence {
+  reportId: string; day: number; seed: number; rulesVersion: string; region: RegionId;
+  masterId: string; partyId: string; partyName: string; observation: EncounterObservation;
+}
+export interface RenewalOccurrence { id: string; productId: string; mechanics: InstallationMechanics; }
+export type RenewalStatus = 'OPEN' | 'SATISFIED_BY_PAID_REPLACEMENT' | 'DECLINED' | 'EXPIRED' | 'STALE';
+export interface EncounterRenewalRequest {
+  id: string; occurrenceId: string; epoch: number; evidence: RenewalEvidence;
+  status: RenewalStatus; contractId?: string;
+}
+export interface RenewalMasterState {
+  occurrences: RenewalOccurrence[]; lowestMass: number | null; epoch: number;
+  settledDay: number; settledIdentity: string | null;
+  requests: EncounterRenewalRequest[]; history: EncounterRenewalRequest[];
+}
+export interface EncounterRenewalState {
+  schema: 'encounter-renewal-v1'; masters: Record<string, RenewalMasterState>;
+}
+
 export interface ExpeditionReport {
+  encounterObservations?: { schema: 'encounter-observations-v1'; rooms: EncounterObservation[] };
   id: string;
   day: number;
   seed: number;
@@ -309,6 +340,7 @@ export interface ScheduledMatchup {
 }
 
 export interface GameSaveState {
+  encounterRenewal?: EncounterRenewalState;
   version: string;
   seed: number;
   day: number;

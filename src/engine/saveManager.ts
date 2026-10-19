@@ -1,3 +1,5 @@
+import { emptyRenewal, RENEWAL_SAVE_VERSION } from './encounterRenewal';
+import { validateRenewal, validateReportObservations } from './renewalValidation';
 import { GameSaveState } from '../types/game';
 import { INITIAL_PRODUCTS, REAGENTS_CATALOG, TRAP_PARTS_CATALOG } from '../data/catalog';
 import { hashString } from '../utils/prng';
@@ -42,8 +44,9 @@ function unique(xs: any[], path: string) {
 /** Only explicitly versioned additions are defaulted. Damaged progress/stat fields are never guessed. */
 export function normalizeLoadedSave(input: Partial<GameSaveState>): GameSaveState {
   const s = structuredClone(input) as GameSaveState;
-  ensure(object(s) && ['1.0.0', '2.0.0-sim002', '2.1.0-sim002b'].includes(s.version), 'unsupported persistence version');
-  const legacy = s.version !== '2.1.0-sim002b';
+  ensure(object(s) && ['1.0.0', '2.0.0-sim002', '2.1.0-sim002b', RENEWAL_SAVE_VERSION].includes(s.version), 'unsupported persistence version');
+  const legacy = ['1.0.0', '2.0.0-sim002'].includes(s.version);
+  if (s.version !== RENEWAL_SAVE_VERSION && s.encounterRenewal === undefined) s.encounterRenewal = emptyRenewal();
   if (legacy) {
     s.customBrewsCount ??= 0; s.customTrapsCount ??= 0; s.insolvencyEvents ??= 0;
     s.rulesVersion ??= 'v2.0-sim002';
@@ -66,7 +69,7 @@ export function normalizeLoadedSave(input: Partial<GameSaveState>): GameSaveStat
     s.scheduledMatchups = sched;
   }
   validateState(s);
-  s.version = '2.1.0-sim002b';
+  s.version = RENEWAL_SAVE_VERSION;
   return s;
 }
 
@@ -169,6 +172,8 @@ function validateState(s: GameSaveState) {
       for (const k of ['heroCounterUsed','chemicalReaction','casualtyName'] as const) ensure(room[k] === null || typeof room[k] === 'string', `room.${k}`);
     }
   }
+  validateRenewal(s);
+  s.expeditionReports.forEach(validateReportObservations);
   fields(s.tradeTerms, base.tradeTerms, 'trade terms'); ensure(s.tradeTerms!.priceMultiplier > 0, 'trade price');
 }
 function market(m: any) {

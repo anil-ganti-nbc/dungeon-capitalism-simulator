@@ -1,5 +1,7 @@
 # Loyalist renewal — mechanism, evidence and next implementation contract
 
+B3 local successor addendum: [Encounter renewal](ENCOUNTER_RENEWAL.md) implements one finite ordinary-mass-bypass evidence family and explicit opt-in use of the existing paid command, with no subsidy/stock/capacity/reset gift. It does not solve every renewal family or establish Loyalist viability. Existing untreated control source/results and the original wear study are preserved. The completed builder smoke is one seed per five strategies over six days, plus a separately labelled conserved30-day mechanism, not the required20-seed120-day comparison; the coordinator owns that composed gate. Historical diagnosis and absence statements below remain attributed to their original checkpoint.
+
 **Checkpoint-002 addendum:** this is the preserved checkpoint-001 diagnosis/decision. The transaction/UI portion is now implemented locally; see [Paid installation replacement](PAID_INSTALLATION_REPLACEMENT.md). Structured encounter-driven renewal and policy adoption remain unfinished. The unchanged-policy 100-campaign control has been rerun and matches this baseline exactly; no economic improvement is claimed.
 
 ## Decision

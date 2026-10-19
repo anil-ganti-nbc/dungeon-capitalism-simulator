@@ -1,5 +1,7 @@
 # Trap & Tonic — checkpoints 001–002 publication status
 
+B3 local successor addendum (not publication or acceptance): the newly authorized isolated Hermes builder has implemented the first completed-encounter ordinary-mass-bypass request family, bounded persisted lifecycle, same-command payment, visible alternatives/non-purchase choices and opt-in policy. See [Encounter renewal](ENCOUNTER_RENEWAL.md). Original assertions/fixtures remain unchanged. Only tight/local qualification and a short comparison smoke are claimed; coordinator integrated gates, full paired economics and exact-candidate independent review remain pending. The historical checkpoint001/002 record below is preserved; its old ownership/absence wording is not current authority. No art-production or Android/full-game acceptance is implied.
+
 ## What changed
 
 Branch: `hermes/paid-installation-replacement`, based on foundation repair `1be1732738dcf14db1f70804887d1143afe13e33`. This is additive development atop draft PR #4, not a replacement game or approval to merge either branch. Hermes now develops directly under the operator's instruction; no Codex/new worker was involved in these checkpoints.

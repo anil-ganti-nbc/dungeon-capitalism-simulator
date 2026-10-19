@@ -1,3 +1,5 @@
+import { recordCompletedEncounter, requestsFor, replacementForRequest, mergeCraftedInventoryState } from './encounterRenewal';
+import { computeInstallationReplacementQuote, executeInstallationReplacement } from './economyEngine';
 import { claimSoloCatalyst } from './progression';
 import { getDailyMarketContext } from './marketContext';
 import {
@@ -46,6 +48,7 @@ export type StrategyId =
   | 'PREDATORY_CAPITALIST';
 
 export interface TradeEvent {
+  replacementRequest?: import('./economyEngine').InstallationReplacementRequest;
   before: GameSaveState;
   buyerType: 'MASTER' | 'HERO'; buyerId: string; productId: string;
   terms: { priceMultiplier: number; warrantyBacked: boolean; exclusiveDeal: boolean; secretProvenance: boolean };
@@ -129,7 +132,7 @@ export function runSingleCampaign(
   horizonDays: number = 120,
   recordEvents: boolean = false,
   onTrade?: (event: TradeEvent) => void,
-  controls: { tradeEnabled?: boolean; onAfterRaid?: (state: GameSaveState) => void } = {}
+  controls: { tradeEnabled?: boolean; renewalPolicy?: 'NONE' | 'OBSERVED_MASS_BYPASS'; onCompletedReport?: (report: import('../types/game').ExpeditionReport, state: GameSaveState) => void; onAfterRaid?: (state: GameSaveState) => void } = {}
 ): { metrics: CampaignMetrics; events: EconomyEventLogEntry[]; actionLog: string[]; finalState: GameSaveState } {
   let state = createBaselineState(seed);
   const campaignId = `${strategy.slice(0, 4)}_S${seed}`;
@@ -482,7 +485,7 @@ export function runSingleCampaign(
           if ((state.reagentInventory[id] || 0) > 0) state.reagentInventory[id] -= 1;
         });
         state.gold -= spotCost;
-        state.products = mergeCraftedProductIntoInventory(state.products, prod, batchSize);
+        state = mergeCraftedInventoryState(state, prod, batchSize);
         state.customBrewsCount += 1;
         customPotionsBrewed += 1;
         actionLog.push(`D${d}:BREW:${prod.id}:${prod.name}`);
@@ -542,7 +545,7 @@ export function runSingleCampaign(
           if ((state.partInventory[id] || 0) > 0) state.partInventory[id] -= 1;
         });
         state.gold -= spotCost;
-        state.products = mergeCraftedProductIntoInventory(state.products, trapProd, 2);
+        state = mergeCraftedInventoryState(state, trapProd, 2);
         state.customTrapsCount += 1;
         customTrapsAssembled += 1;
         actionLog.push(`D${d}:TRAP:${trapProd.id}:${trapProd.name}`);
@@ -592,6 +595,31 @@ export function runSingleCampaign(
       strategy === 'PREDATORY_CAPITALIST' ||
       (strategy === 'ALCHEMICAL_INDUSTRIALIST' && d % 2 === 0);
 
+    let renewalSales = 0;
+    if (shouldSellToMaster && controls.tradeEnabled !== false && controls.renewalPolicy === 'OBSERVED_MASS_BYPASS') {
+      const request = requestsFor(state, activeMaster.id).find(r => r.status === 'OPEN');
+      const terms = { priceMultiplier: pricePct / 100, warrantyBacked: warranty, exclusiveDeal: exclusive, secretProvenance: secretMark };
+      if (request) {
+        const options = state.products.filter(p => p.targetAudience !== 'HERO' && p.stock > 0).map(p => {
+          const intent = replacementForRequest(state, request.id, p.id)!;
+          return { intent, quote: computeInstallationReplacementQuote(state, intent, terms) };
+        }).sort((a,b) => Number(b.quote.success) - Number(a.quote.success)
+          || (a.quote.unitPrice ?? Infinity) - (b.quote.unitPrice ?? Infinity) || a.intent.productId.localeCompare(b.intent.productId));
+        const option = options[0];
+        if (option) {
+          const before = structuredClone(state);
+          const tx = option.quote.success ? executeInstallationReplacement(state, option.intent, terms, option.quote.unitPrice!)
+            : { success: false, reason: option.quote.reason };
+          onTrade?.({ before, buyerType: 'MASTER', buyerId: activeMaster.id, productId: option.intent.productId,
+            terms, replacementRequest: option.intent, result: structuredClone(tx) });
+          if (tx.success && 'nextState' in tx && tx.nextState) {
+            state = tx.nextState; renewalSales = 1; masterContractsSigned++;
+            activeMaster = state.masters.find(m => m.id === activeMaster.id)!;
+            actionLog.push(`D${d}:RENEW_MASS:${request.id}:${option.intent.productId}:${option.quote.unitPrice}`);
+          } else actionLog.push(`D${d}:RENEW_REFUSED:${request.id}:${tx.reason}`);
+        } else actionLog.push(`D${d}:RENEW_REFUSED:${request.id}:NO_STOCK`);
+      }
+    }
     if (shouldSellToMaster && controls.tradeEnabled !== false) {
       const masterOptions = state.products.filter(
         (p) => (p.targetAudience === 'MASTER' || p.targetAudience === 'BOTH') && p.stock > 0
@@ -608,7 +636,7 @@ export function runSingleCampaign(
           (strategy === 'BALANCED_MERCHANT' && activeMaster.trust >= 88 && dayRng.next() < 0.45)
             ? 2
             : 1;
-        let salesMade = 0;
+        let salesMade = renewalSales;
         for (const prod of sorted) {
           if (prod.stock > 0 && salesMade < maxMasterSalesToday) {
             const beforeTrade = onTrade ? structuredClone(state) : undefined;
@@ -694,6 +722,7 @@ export function runSingleCampaign(
       }
     }
 
+    const preRaid = structuredClone(state);
     // 5. Expedition Resolution (exact production simulateRegionExpedition on scheduled participants)
     const report = simulateRegionExpedition(
       d,
@@ -835,7 +864,9 @@ export function runSingleCampaign(
 
     // The same post-raid client transition as the actual UI; no second breach decrement.
     Object.assign(state, resolvePostRaidClients(state, report));
+    state = recordCompletedEncounter(preRaid, state, report);
 
+    controls.onCompletedReport?.(structuredClone(report), structuredClone(state));
     if (controls.onAfterRaid) controls.onAfterRaid(structuredClone(state));
     if (d === 15 || d === 45 || d === 90 || d === 120) {
       notableStoryLog.push(

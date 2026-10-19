@@ -1,3 +1,4 @@
+import { recordInstallationSale, renewalEligibility } from './encounterRenewal';
 import { getDailyMarketContext } from './marketContext';
 import {
   GameSaveState,
@@ -321,11 +322,12 @@ export function executeCommercialTransaction(
     success: true,
     contract: newContract,
     unitPrice,
-    nextState
+    nextState: recordInstallationSale(prevState, nextState, newContract)
   };
 }
 
 export interface InstallationReplacementRequest {
+  evidence?: { requestId: string; occurrenceId: string; epoch: number; candidateMechanics: import('../types/game').InstallationMechanics };
   masterId: string;
   productId: string;
   slotIndex: number;
@@ -343,6 +345,8 @@ function planInstallationReplacement(
   request: InstallationReplacementRequest,
   terms: CommercialTerms
 ): TransactionResult {
+  const evidenceRefusal = request && renewalEligibility(state, request);
+  if (evidenceRefusal) return { success: false, reason: evidenceRefusal };
   const master = state.masters.find(row => row.id === request?.masterId);
   if (!master || !Number.isSafeInteger(request.slotIndex) || request.slotIndex < 0 || request.slotIndex >= master.installedHazards.length
       || master.installedHazards[request.slotIndex] !== request.expectedProductId
@@ -367,7 +371,7 @@ function planInstallationReplacement(
   if (product.id === retired.id || signature(product) === signature(retired)) {
     return { success: false, reason: 'Choose a mechanically different installation; relabelling or rebuying the same hazard is not a retrofit.' };
   }
-  const projected: GameSaveState = { ...state, masters: state.masters.map(row => row.id === master.id ? {
+  const projected: GameSaveState = { ...state, encounterRenewal: undefined, masters: state.masters.map(row => row.id === master.id ? {
     ...row,
     installedHazards: row.installedHazards.filter((_, index) => index !== request.slotIndex),
     installedResetCharges: row.installedResetCharges!.filter((_, index) => index !== request.slotIndex)
@@ -379,7 +383,7 @@ function planInstallationReplacement(
   }
   const contract: SaleContract = { ...sale.contract!, installationReplacement: { slotIndex: request.slotIndex,
     retiredProductId: retired.id, retiredProductName: retired.name, retiredResetCharge: request.expectedResetCharge } };
-  return { ...sale, contract, nextState: { ...sale.nextState!,
+  const plannedState: GameSaveState = { ...sale.nextState!,
     contractsToday: sale.nextState!.contractsToday.map(row => row.id === contract.id ? contract : row),
     contractHistory: sale.nextState!.contractHistory.map(row => row.id === contract.id ? contract : row),
     masters: sale.nextState!.masters.map(row => row.id === master.id ? {
@@ -387,7 +391,9 @@ function planInstallationReplacement(
     installedHazards: master.installedHazards.map((id, index) => index === request.slotIndex ? product.id : id),
     installedResetCharges: master.installedResetCharges!.map((charge, index) => index === request.slotIndex ? row.installedResetCharges![0] : charge),
     memoryLog: [...row.memoryLog.slice(0, -1), `Day ${state.day}: Replaced slot ${request.slotIndex + 1}: ${retired.name} [${retired.id}] with ${product.name} [${product.id}] for ${sale.unitPrice}g; retired ${request.expectedResetCharge} reset charge(s), no refund.`]
-  } : row) } };
+  } : row) };
+  const nextState = recordInstallationSale(state, { ...plannedState, encounterRenewal: state.encounterRenewal }, contract, request.slotIndex);
+  return { ...sale, nextState, contract: nextState.contractHistory.at(-1) };
 }
 
 export type InstallationReplacementQuote = Pick<TransactionResult, 'success' | 'reason' | 'unitPrice'>;

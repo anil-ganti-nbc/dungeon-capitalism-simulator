@@ -1,3 +1,4 @@
+import { emptyRenewal, RENEWAL_SAVE_VERSION } from './encounterRenewal';
 import { GameSaveState, RegionId, ScheduledMatchup } from '../types/game';
 import { REAGENTS_CATALOG, TRAP_PARTS_CATALOG, INITIAL_PRODUCTS, SKILL_TREE_NODES } from '../data/catalog';
 import { INITIAL_MASTERS, INITIAL_PARTIES, INITIAL_RIVALS, INITIAL_INTEL_FEED } from '../data/world';
@@ -24,7 +25,8 @@ export function createInitialSaveState(seed: number = 20260001): GameSaveState {
   });
 
   return {
-    version: '2.1.0-sim002b',
+    version: RENEWAL_SAVE_VERSION,
+    encounterRenewal: emptyRenewal(),
     seed,
     day: 1,
     phase: 'MORNING',

@@ -14,6 +14,9 @@ import {
 } from '../types/game';
 import { DeterministicRNG, hashString } from '../utils/prng';
 
+import { installationMechanics } from './encounterFacts';
+import { EncounterObservation } from '../types/game';
+
 export const SIM_RULES_VERSION = 'v2.0-sim002';
 export const AUTO_RESET_CAM_DC_BONUS = 12;
 
@@ -404,6 +407,7 @@ export function simulateRegionExpedition(
   ];
 
   const rooms: ExpeditionRoomEvent[] = [];
+  const observations: EncounterObservation[] = [];
   let totalLooted = 0;
   let warrantyClaimsTriggered = 0;
   const doubleSaleDemandCreated: string[] = [];
@@ -584,6 +588,11 @@ export function simulateRegionExpedition(
       }
     }
 
+    observations.push({ sourceSlotIndex: masterProducts.length ? master.installedHazards.map((id, index) => ({ id, index }))
+      .filter(row => productsCatalog.some(p => p.id === row.id))[i % masterProducts.length].index : null,
+      hazardId: hazard.id, mechanics: installationMechanics(hazard), effectiveMassKg: effectiveMass,
+      baseMassKg: baseMass, counter: morphPotion ? { kind: 'MORPH', productId: morphPotion.id, massEffectKg: morphPotion.massEffectKg }
+        : { kind: 'NATURAL_MASS' }, triggersByMass, outcome, roomIndex: i + 1 });
     totalLooted += lootSecured;
     rooms.push({
       roomIndex: i + 1,
@@ -635,6 +644,7 @@ export function simulateRegionExpedition(
     : `${party.name} Raided ${master.name}: ${totalLooted}g Looted, ${totalDamage} Hazard Damage Dealt`;
 
   return {
+    encounterObservations: { schema: 'encounter-observations-v1', rooms: observations },
     id: `exp_day${day}_${master.id}_${party.id}`,
     day,
     seed,
