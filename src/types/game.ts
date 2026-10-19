@@ -118,6 +118,7 @@ export interface DungeonMaster {
   visitorTraffic: number;    // 0-100 (too lethal = 0 traffic; too easy = looted treasury)
   trust: number;             // 0-100
   knownHeroCounters: string[];
+  installedResetCharges?: number[]; // Slot-aligned, paid temporal rewinds remaining (0 or 1).
   installedHazards: string[]; // Canonical Product IDs
   memoryLog: string[];
   desiredTrait: string;
@@ -176,7 +177,17 @@ export interface MarketFactOrRumour {
   resolved?: boolean;
 }
 
+export interface DailyMarketContext {
+  version: 'market-v1';
+  rulesVersion: string;
+  seed: number;
+  day: number;
+  region: RegionId;
+  factor: number;
+}
+
 export interface SaleContract {
+  marketContext?: DailyMarketContext;
   id: string;
   day: number;
   buyerType: 'MASTER' | 'HERO';
@@ -238,6 +249,7 @@ export interface ExpeditionReport {
 }
 
 export interface FinancialRecord {
+  marketContext?: DailyMarketContext;
   day: number;
   grossRevenue: number;
   cogs: number;

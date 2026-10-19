@@ -1,3 +1,5 @@
+import { claimSoloCatalyst } from './progression';
+import { getDailyMarketContext } from './marketContext';
 import {
   GameSaveState,
   RegionId,
@@ -31,7 +33,7 @@ import {
 import {
   computeQuotation,
   executeCommercialTransaction,
-  resolveConsumableWear,
+  resolvePostRaidClients,
   computeRegionalFinesAndClaims
 } from './economyEngine';
 import { DeterministicRNG, hashString } from '../utils/prng';
@@ -42,6 +44,13 @@ export type StrategyId =
   | 'HERO_BENEFACTOR'
   | 'ALCHEMICAL_INDUSTRIALIST'
   | 'PREDATORY_CAPITALIST';
+
+export interface TradeEvent {
+  before: GameSaveState;
+  buyerType: 'MASTER' | 'HERO'; buyerId: string; productId: string;
+  terms: { priceMultiplier: number; warrantyBacked: boolean; exclusiveDeal: boolean; secretProvenance: boolean };
+  result: import('./economyEngine').TransactionResult;
+}
 
 export interface CampaignMetrics {
   campaignId: string;
@@ -107,80 +116,8 @@ export interface EconomyEventLogEntry {
   netWorthAfter: number;
 }
 
-function buildInitialScheduledMatchups(): Record<RegionId, ScheduledMatchup> {
-  const result = {} as Record<RegionId, ScheduledMatchup>;
-  (['cellar', 'warrens', 'blackspire', 'vault'] as const).forEach((reg) => {
-    const m = INITIAL_MASTERS.find((x) => x.region === reg) || INITIAL_MASTERS[0];
-    const p = INITIAL_PARTIES.find((x) => x.region === reg) || INITIAL_PARTIES[0];
-    result[reg] = { masterId: m.id, partyId: p.id };
-  });
-  return result;
-}
-
-export function createBaselineState(seed: number): GameSaveState {
-  const initReagents: Record<string, number> = {};
-  REAGENTS_CATALOG.slice(0, 20).forEach((r) => {
-    initReagents[r.id] = 3;
-  });
-  const initParts: Record<string, number> = {};
-  TRAP_PARTS_CATALOG.slice(0, 20).forEach((p) => {
-    initParts[p.id] = 2;
-  });
-
-  return {
-    version: '2.0.0-sim002',
-    seed,
-    day: 1,
-    phase: 'MORNING',
-    activeRegion: 'cellar',
-    unlockedRegions: ['cellar'],
-    gold: 1850,
-    debt: 0,
-    skillPoints: 2,
-    customBrewsCount: 0,
-    customTrapsCount: 0,
-    scheduledMatchups: buildInitialScheduledMatchups(),
-    reagentInventory: initReagents,
-    partInventory: initParts,
-    products: INITIAL_PRODUCTS.map((p) => {
-      const kind = p.category === 'TRAP_MASTER' || p.category === 'HAZARD_MONSTER' ? 'trp' : 'alc';
-      return {
-        ...p,
-        formulaSignature: computeCanonicalFormulaSignature(kind, p.recipeComponents, [], SIM_RULES_VERSION),
-        rulesVersion: SIM_RULES_VERSION,
-        appliedSkills: [],
-        counterClasses: [...p.counterClasses],
-        recipeComponents: [...p.recipeComponents],
-        reactionNotes: [...p.reactionNotes]
-      };
-    }),
-    masters: INITIAL_MASTERS.map((m) => ({
-      ...m,
-      knownHeroCounters: [...m.knownHeroCounters],
-      installedHazards: [...m.installedHazards],
-      memoryLog: [...m.memoryLog]
-    })),
-    parties: INITIAL_PARTIES.map((p) => ({
-      ...p,
-      members: p.members.map((mem) => ({ ...mem })),
-      observedTraps: [...p.observedTraps],
-      equippedProducts: [...p.equippedProducts],
-      memoryLog: [...p.memoryLog]
-    })),
-    rivals: INITIAL_RIVALS.map((r) => ({ ...r })),
-    contractsToday: [],
-    contractHistory: [],
-    intelFeed: INITIAL_INTEL_FEED.map((i) => ({ ...i })),
-    expeditionReports: [],
-    financialLedger: [],
-    catalystLedger: [],
-    expertUnlocked: false,
-    skills: SKILL_TREE_NODES.map((s) => ({ ...s })),
-    basiliskChainStage: 1,
-    blackspireResolution: 'NONE',
-    insolvencyEvents: 0
-  };
-}
+export { createInitialSaveState as createBaselineState } from './initialState';
+import { createInitialSaveState as createBaselineState } from './initialState';
 
 /**
  * Runs a single 120-day campaign using the exact SIM-002 production simulation functions
@@ -190,7 +127,9 @@ export function runSingleCampaign(
   seed: number,
   strategy: StrategyId,
   horizonDays: number = 120,
-  recordEvents: boolean = false
+  recordEvents: boolean = false,
+  onTrade?: (event: TradeEvent) => void,
+  controls: { tradeEnabled?: boolean; onAfterRaid?: (state: GameSaveState) => void } = {}
 ): { metrics: CampaignMetrics; events: EconomyEventLogEntry[]; actionLog: string[]; finalState: GameSaveState } {
   let state = createBaselineState(seed);
   const campaignId = `${strategy.slice(0, 4)}_S${seed}`;
@@ -298,7 +237,7 @@ export function runSingleCampaign(
 
     // 2. Charter Progression & Debt Management (organic working-capital gating)
     const cheapCredit = hasSkill('cheap_credit');
-    const marketSentiment = 0.85 + dayRng.next() * 0.37;
+
     if (!state.unlockedRegions.includes('warrens') && d >= 4) {
       const minDown = Math.round(warrensCharterCost * (cheapCredit ? 0.22 : 0.32));
       const reserveNeeded =
@@ -426,46 +365,10 @@ export function runSingleCampaign(
       masterContractsSigned >= 2 &&
       heroContractsSigned >= 2;
 
-    const specialistPeerExchangeReady =
-      state.unlockedRegions.includes('blackspire') &&
-      !soloCatalystReady &&
-      daysSinceHard >= requiredHardTenure + 4 &&
-      ((strategy === 'DUNGEON_LOYALIST' && state.customTrapsCount >= 8 && masterContractsSigned >= 20) ||
-        (strategy === 'HERO_BENEFACTOR' && state.customBrewsCount >= 8 && heroContractsSigned >= 20));
-
-    if ((soloCatalystReady || specialistPeerExchangeReady) && !state.expertUnlocked) {
-      if (soloCatalystReady) {
-        state.expertUnlocked = true;
-        state.unlockedRegions.push('vault');
-        state.activeRegion = 'vault';
-        dayReachedExpert = d;
-        const hash = hashString(`SOLO_VESPERA_CATALYST_DAY_${d}_${seed}`).slice(0, 8).toUpperCase();
-        state.catalystLedger.push({
-          id: `cat_solo_${d}`,
-          senderName: 'Arch-Architect Vespera (Blackspire Panopticon)',
-          senderType: 'SOLO_DM_COURIER',
-          provenanceHash: hash,
-          dayReceived: d,
-          commissionNote: 'Solo Offline Commission Fulfilled in Blackspire.',
-          isAuthentic: true
-        });
-        actionLog.push(`D${d}:CLAIM_SOLO_CATALYST`);
-      } else {
-        const peerCode = generatePeerCatalystCode('GUILDCONCLAVE', d);
-        const verified = verifyAndParseCatalystCode(
-          peerCode,
-          d,
-          state.catalystLedger,
-          state.unlockedRegions
-        );
-        if (verified.valid && verified.entry) {
-          state.expertUnlocked = true;
-          state.unlockedRegions.push('vault');
-          state.activeRegion = 'vault';
-          dayReachedExpert = d;
-          state.catalystLedger.push(verified.entry);
-          actionLog.push(`D${d}:VERIFY_PEER_CATALYST:${peerCode}`);
-        }
+    if (soloCatalystReady && !state.expertUnlocked) {
+      const next = claimSoloCatalyst(state);
+      if (next !== state) {
+        state = next; dayReachedExpert=d; actionLog.push(`D${d}:CLAIM_SOLO_CATALYST`);
       }
 
       if (state.expertUnlocked && recordEvents) {
@@ -634,7 +537,7 @@ export function runSingleCampaign(
       );
 
       if (state.gold >= spotCost) {
-        const trapProd = assembleTrapProduct(partTuple, trapName, zincGuard);
+        const trapProd = assembleTrapProduct(partTuple, trapName, zincGuard, hasSkill('auto_reset_cam'));
         partIds.forEach((id) => {
           if ((state.partInventory[id] || 0) > 0) state.partInventory[id] -= 1;
         });
@@ -656,15 +559,6 @@ export function runSingleCampaign(
     );
     let activeMaster = schedule.currentMaster;
     let activeParty = schedule.currentParty;
-
-    // For Dungeon Loyalist, strip default hero antidotes when heroes run out of supplies
-    if (strategy === 'DUNGEON_LOYALIST' && d > 3) {
-      activeParty.equippedProducts = ['prod_antidote_unstabilised'];
-    }
-    // For Hero Benefactor & Alchemical Industrialist, Masters rely on standard 45kg pressure plates unless supplied
-    if ((strategy === 'HERO_BENEFACTOR' || strategy === 'ALCHEMICAL_INDUSTRIALIST') && d > 2) {
-      activeMaster.installedHazards = ['prod_trap_plate_spikes'];
-    }
 
     const bilateralSkill = hasSkill('bilateral_margin');
     const secretSkill = hasSkill('secret_shipping');
@@ -691,13 +585,6 @@ export function runSingleCampaign(
         strategy === 'ALCHEMICAL_INDUSTRIALIST' ||
         (strategy === 'PREDATORY_CAPITALIST' && d % 3 === 0));
 
-    const baseMultiplier =
-      (pricePct / 100) *
-      (warranty ? 1.12 : 1) *
-      (exclusive ? 1.22 : 1) *
-      (bilateralSkill ? 1.1 : 1) *
-      marketSentiment;
-
     // Sell to Dungeon Master?
     const shouldSellToMaster =
       strategy === 'BALANCED_MERCHANT' ||
@@ -705,14 +592,7 @@ export function runSingleCampaign(
       strategy === 'PREDATORY_CAPITALIST' ||
       (strategy === 'ALCHEMICAL_INDUSTRIALIST' && d % 2 === 0);
 
-    // Low-trust customer boycott check (Predatory gouging/double-dealing consequence)
-    const masterBoycottsToday =
-      activeMaster.trust < 50 && dayRng.next() < (54 - activeMaster.trust) * 0.016;
-    if (masterBoycottsToday) {
-      masterChurnCount += 1;
-    }
-
-    if (shouldSellToMaster) {
+    if (shouldSellToMaster && controls.tradeEnabled !== false) {
       const masterOptions = state.products.filter(
         (p) => (p.targetAudience === 'MASTER' || p.targetAudience === 'BOTH') && p.stock > 0
       );
@@ -731,13 +611,16 @@ export function runSingleCampaign(
         let salesMade = 0;
         for (const prod of sorted) {
           if (prod.stock > 0 && salesMade < maxMasterSalesToday) {
+            const beforeTrade = onTrade ? structuredClone(state) : undefined;
             const tx = executeCommercialTransaction(state, 'MASTER', activeMaster.id, prod, {
               priceMultiplier: pricePct / 100,
               warrantyBacked: warranty,
               exclusiveDeal: exclusive,
-              secretProvenance: secretMark,
-              marketSentiment
+              secretProvenance: secretMark
             });
+            if (onTrade) onTrade({ before: beforeTrade!, buyerType: 'MASTER', buyerId: activeMaster.id, productId: prod.id,
+              terms: { priceMultiplier: pricePct / 100, warrantyBacked: warranty, exclusiveDeal: exclusive, secretProvenance: secretMark },
+              result: structuredClone(tx) });
             if (tx.success && tx.nextState) {
               state = tx.nextState;
               activeMaster = state.masters.find((m) => m.id === activeMaster.id)!;
@@ -763,7 +646,7 @@ export function runSingleCampaign(
       strategy === 'ALCHEMICAL_INDUSTRIALIST' ||
       strategy === 'PREDATORY_CAPITALIST';
 
-    if (shouldSellToHero) {
+    if (shouldSellToHero && controls.tradeEnabled !== false) {
       const heroOptions = state.products.filter(
         (p) => (p.targetAudience === 'HERO' || p.targetAudience === 'BOTH') && p.stock > 0
       );
@@ -783,13 +666,16 @@ export function runSingleCampaign(
         let salesMade = 0;
         for (const prod of sorted) {
           if (prod.stock > 0 && salesMade < maxHeroSalesToday) {
+            const beforeTrade = onTrade ? structuredClone(state) : undefined;
             const tx = executeCommercialTransaction(state, 'HERO', activeParty.id, prod, {
               priceMultiplier: pricePct / 100,
               warrantyBacked: warranty,
               exclusiveDeal: exclusive,
-              secretProvenance: secretMark,
-              marketSentiment
+              secretProvenance: secretMark
             });
+            if (onTrade) onTrade({ before: beforeTrade!, buyerType: 'HERO', buyerId: activeParty.id, productId: prod.id,
+              terms: { priceMultiplier: pricePct / 100, warrantyBacked: warranty, exclusiveDeal: exclusive, secretProvenance: secretMark },
+              result: structuredClone(tx) });
             if (tx.success && tx.nextState) {
               state = tx.nextState;
               activeParty = state.parties.find((p) => p.id === activeParty.id)!;
@@ -858,20 +744,13 @@ export function runSingleCampaign(
     }
 
     warrantyClaimsCount += report.warrantyClaimsTriggered;
-    const regionalBreachFine: Record<RegionId, number> = {
-      cellar: 160,
-      warrens: 240,
-      blackspire: 380,
-      vault: 520
-    };
-    const dayFines = report.exclusivityBreachDetected
-      ? regionalBreachFine[state.activeRegion]
-      : 0;
+    const { breachFine: dayFines, warrantyPayout: dayClaims } = computeRegionalFinesAndClaims(
+      state.activeRegion, report.exclusivityBreachDetected, report.warrantyClaimsTriggered,
+      state.skills.filter(s => s.unlocked).map(s => s.effectKey)
+    );
 
     if (report.exclusivityBreachDetected) {
       exclusivityBreachesCount += 1;
-      activeMaster.trust = Math.max(15, activeMaster.trust - 8);
-      activeParty.trust = Math.max(15, activeParty.trust - 8);
       if (recordEvents && events.length < 30) {
         events.push({
           campaignId,
@@ -891,10 +770,6 @@ export function runSingleCampaign(
     const dayRev = state.contractsToday.reduce((acc, c) => acc + c.totalRevenue, 0);
     const dayCogs = state.contractsToday.reduce((acc, c) => acc + c.unitCost * c.quantity, 0);
     const dayOverhead = 35 + state.unlockedRegions.length * 20;
-    const hasWarrantyShield = hasSkill('warranty_shield');
-    const dayClaims = Math.round(
-      report.warrantyClaimsTriggered * 165 * (hasWarrantyShield ? 0.6 : 1)
-    );
     const dailyInterestRate = cheapCredit ? 0.003 : 0.005;
     const dayInterest = Math.round(state.debt * dailyInterestRate);
 
@@ -942,6 +817,13 @@ export function runSingleCampaign(
       }
     }
 
+    const inventoryValue = state.products.reduce((sum,p) => sum + p.stock*p.productionCost,0);
+    state.financialLedger.unshift({ day:d, grossRevenue:dayRev, cogs:dayCogs, grossMargin:dayRev-dayCogs,
+      overheadAndStorage:dayOverhead, warrantyAndClaims:dayClaims, finesAndBribes:dayFines,
+      financingInterest:dayInterest, netProfit:dayRev-dayCogs-dayOverhead-dayClaims-dayFines-dayInterest,
+      endingCash:state.gold, inventoryValue, debt:state.debt, netWorth:state.gold+inventoryValue-state.debt,
+      marketContext:getDailyMarketContext(state.seed,d,state.activeRegion,state.rulesVersion) });
+
     state.skillPoints += 1;
     state.contractsToday = [];
 
@@ -951,39 +833,10 @@ export function runSingleCampaign(
       partyId: schedule.nextParty.id
     };
 
-    // Update Master & Party budgets, trust, and consumable wear (A03: shared resolveConsumableWear)
-    const unlockedSkillKeys = state.skills.filter((s) => s.unlocked).map((s) => s.effectKey);
-    const wear = resolveConsumableWear(
-      activeParty,
-      activeMaster,
-      report.warrantyClaimsTriggered,
-      d,
-      unlockedSkillKeys
-    );
+    // The same post-raid client transition as the actual UI; no second breach decrement.
+    Object.assign(state, resolvePostRaidClients(state, report));
 
-    state.masters = state.masters.map((m) => {
-      if (m.id === activeMaster.id) {
-        return {
-          ...m,
-          installedHazards: wear.nextInstalled,
-          budget: Math.max(450, m.budget + report.masterTreasuryDelta + 320)
-        };
-      }
-      return { ...m, budget: m.budget + 180 };
-    });
-
-    state.parties = state.parties.map((p) => {
-      if (p.id === activeParty.id) {
-        return {
-          ...p,
-          equippedProducts: wear.nextEquipped,
-          budget: Math.max(420, p.budget + report.partyBudgetDelta + 290),
-          trust: Math.max(15, p.trust - report.warrantyClaimsTriggered * 12)
-        };
-      }
-      return { ...p, budget: p.budget + 160 };
-    });
-
+    if (controls.onAfterRaid) controls.onAfterRaid(structuredClone(state));
     if (d === 15 || d === 45 || d === 90 || d === 120) {
       notableStoryLog.push(
         `Day ${d} (${state.activeRegion}): ${report.summaryHeadline} [Cash: ${state.gold}g, Debt: ${state.debt}g]`

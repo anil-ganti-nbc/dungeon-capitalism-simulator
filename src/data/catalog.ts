@@ -723,7 +723,7 @@ export const TRAP_PARTS_CATALOG: TrapPart[] = [
     deterrence: 90,
     damageType: 'arcane',
     counterplayRoutes: ['disruption', 'sabotage'],
-    description: 'Triggers on BOTH heavy (>50kg) and abnormally light (<25kg) intruders, punishing standard featherweight tricks.'
+    description: 'Triggers only on intruders under 25kg; intruders of 25kg or more bypass this sensor.'
   },
 
   // === CONCEALMENT (10) ===
@@ -1816,7 +1816,7 @@ export const SKILL_TREE_NODES: SkillNode[] = [
     tier: 2,
     costPoints: 2,
     unlocked: false,
-    description: 'Traps gain +12 Detection DC and automatically reset once per expedition.',
+    description: 'Newly assembled traps gain exactly +12 Detection DC, including above DC100. Existing stock and installations keep their DC. While this skill is active, installed traps retain immunity to expedition wear.',
     effectKey: 'auto_reset_cam'
   },
   {

@@ -1,0 +1,12 @@
+{
+  "origin": "Read-only copies from prior Codex audit exports; historical source evidence unchanged",
+  "diagnostic": true,
+  "fixtureSHA256": {
+    "captured-ui-60.json.gz": "dd95e9ddec88f8ea4c8ab684ef752b6aeb27142b36735cad4abb482528bbfb29",
+    "historical-c45-60.json.gz": "488bf728cd9cce4e4aed740019a033b25ad38a8c82228f29b0bc59292dbaf293",
+    "historical-f368-60.json.gz": "a67785464177fa4ec5ebf50a09c7b01325cd289b94a00abd1491098fe107610f",
+    "historical-v2-day5.json": "35f89c65518c70b7a97e6e369aae9d5f3e728ee7898b1a27cefb8e15cc637398",
+    "legacy-v1.json": "9dcc09adbd9af7685a15851c4b77b6b82680f2ed187da92d756e56bf629f8451"
+  },
+  "browserHarnessSHA256": "6025b472c5c211195e38429a7ac4fab8039c8153cfb002dbf0fa29ae14ad6c49"
+}

@@ -1,0 +1,14 @@
+import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+const out=process.env.EVIDENCE_DIR??'artifacts/sim002b';fs.mkdirSync(out,{recursive:true});
+const result=spawnSync(process.execPath,['node_modules/tsx/dist/cli.mjs','scripts/replay_parity.ts','--quick','--negative'],{encoding:'utf8',env:process.env});
+fs.writeFileSync(path.join(out,'negative-control.log'),result.stdout+result.stderr);
+assert.equal(result.status,1,'deliberately corrupted comparison must exit 1');
+assert.match(result.stderr,/AssertionError/);
+const proof=JSON.parse(fs.readFileSync(path.join(out,'negative-quote.json'),'utf8'));
+assert.equal(proof.mutatedExpected,proof.actualExpected+1);
+assert.match(proof.button,new RegExp(`\\(${proof.actualExpected}g\\)`));
+fs.writeFileSync(path.join(out,'negative-exit.json'),JSON.stringify({exitCode:result.status,proof},null,2));
+console.log('Negative control: real compared quote +1g rejected with exit 1');

@@ -1,3 +1,4 @@
+import { isTrapTriggeredByMass } from '../engine/simulation';
 import React, { useState, useMemo } from 'react';
 import {
   Reagent,
@@ -341,6 +342,7 @@ interface TrapWorkshopProps {
   unlockedRegions: RegionId[];
   partInventory: Record<string, number>;
   zincGuardUnlocked: boolean;
+  autoResetCamUnlocked: boolean;
   onAssembleTrap: (product: CraftedProduct, cost: number, consumedIds: string[]) => void;
   onBuyPart: (part: TrapPart, qty: number) => void;
 }
@@ -350,6 +352,7 @@ export const TrapWorkshopPanel: React.FC<TrapWorkshopProps> = ({
   unlockedRegions,
   partInventory,
   zincGuardUnlocked,
+  autoResetCamUnlocked,
   onAssembleTrap,
   onBuyPart
 }) => {
@@ -385,8 +388,8 @@ export const TrapWorkshopPanel: React.FC<TrapWorkshopProps> = ({
   }, [triggerId, concealId, deliveryId, payloadId, powerId, resetId, triggers, concealments, deliveries, payloads, powers, resets]);
 
   const previewTrap = useMemo(
-    () => assembleTrapProduct(selectedTuple, customName, zincGuardUnlocked),
-    [selectedTuple, customName, zincGuardUnlocked]
+    () => assembleTrapProduct(selectedTuple, customName, zincGuardUnlocked, autoResetCamUnlocked),
+    [selectedTuple, customName, zincGuardUnlocked, autoResetCamUnlocked]
   );
 
   const loadTrapPreset = (preset: 'plate_45kg' | 'sulphur_fog_machine' | 'basilisk_lair' | 'quartz_8kg_acid') => {
@@ -506,7 +509,7 @@ export const TrapWorkshopPanel: React.FC<TrapWorkshopProps> = ({
                     {slot.list.map((p) => (
                       <option key={p.id} value={p.id}>
                         {p.name} ({p.baseCost}g · DC {p.detectionDC} · Leth {p.lethality}
-                        {p.massThresholdKg !== undefined ? ` · >=${p.massThresholdKg}kg` : ''})
+                        {p.massThresholdKg !== undefined ? ` · ${p.id === 'part_trg_12' ? '<' : '>='}${p.massThresholdKg}kg` : ''})
                       </option>
                     ))}
                   </select>
@@ -582,29 +585,24 @@ export const TrapWorkshopPanel: React.FC<TrapWorkshopProps> = ({
             </div>
           </div>
 
+          {previewTrap.recipeComponents.includes('part_rst_09') && <p className="text-sm text-amber-200 mb-3">Each purchased installation includes one temporal rewind. It prevents one wear removal, consumes that charge, then wears normally. A new paid installation replenishes it.</p>}
           {/* Mass Trigger Calibration vs Chicken-Morph Test */}
           <div className="p-3 bg-[#0B0E14] border border-slate-800 rounded-lg mb-4 text-xs">
             <div className="font-mono text-slate-300 mb-1.5">
-              Trigger Calibration: {previewTrap.triggerMassThresholdKg}kg Floor Threshold
+              Trigger Calibration: {previewTrap.recipeComponents.includes('part_trg_12') ? 'Inversion: under 25kg' : `${previewTrap.triggerMassThresholdKg}kg floor threshold`}
             </div>
-            <div className="flex items-center justify-between text-slate-400 font-mono tabular-nums py-1 border-b border-slate-800/70">
-              <span>Standard Vanguard (~86kg):</span>
-              <span className="text-rose-400 font-semibold">TRIGGERS TRAP</span>
-            </div>
-            <div className="flex items-center justify-between text-slate-400 font-mono tabular-nums py-1">
-              <span>Chicken-Morphed Hero (~21kg):</span>
-              <span
-                className={
-                  previewTrap.triggerMassThresholdKg > 21
-                    ? 'text-emerald-400 font-semibold'
-                    : 'text-rose-400 font-semibold'
-                }
-              >
-                {previewTrap.triggerMassThresholdKg > 21
-                  ? 'BYPASSES PLATE (<Threshold!)'
-                  : 'CAUGHT BY HAIR-TRIGGER!'}
-              </span>
-            </div>
+            {[19, 21, 25, 54, 86].map(mass => {
+              const triggers = isTrapTriggeredByMass(previewTrap, mass);
+              const label = mass === 86 ? 'Standard Vanguard (~86kg)' : mass === 21 ? 'Chicken-Morphed Hero (~21kg)' : `Calibration hero (${mass}kg)`;
+              return (
+                <div key={mass} data-mass-calibration={mass} className="flex items-center justify-between gap-2 text-slate-400 font-mono tabular-nums py-1 border-b border-slate-800/70">
+                  <span>{label}:</span>
+                  <span className={triggers ? 'text-rose-400 font-semibold' : 'text-emerald-400 font-semibold'}>
+                    {triggers ? 'TRIGGERS SENSOR' : 'BYPASSES SENSOR'}
+                  </span>
+                </div>
+              );
+            })}
           </div>
 
           <div className="space-y-1.5 text-xs text-slate-300">

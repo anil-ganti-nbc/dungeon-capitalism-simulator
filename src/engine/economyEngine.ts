@@ -1,3 +1,4 @@
+import { getDailyMarketContext } from './marketContext';
 import {
   GameSaveState,
   CraftedProduct,
@@ -5,6 +6,7 @@ import {
   AdventuringParty,
   SaleContract,
   RegionId,
+  ExpeditionReport,
   CounterClass
 } from '../types/game';
 import { DeterministicRNG } from '../utils/prng';
@@ -17,7 +19,7 @@ export interface QuotationOptions {
   day: number;
   seed: number;
   unlockedSkills?: string[];
-  marketSentiment?: number;
+  rulesVersion?: string;
 }
 
 export interface QuotationResult {
@@ -71,7 +73,7 @@ export function computeQuotation(
   options: QuotationOptions
 ): QuotationResult {
   const priceMultiplier = options.priceMultiplier ?? 1.0;
-  const marketSentiment = options.marketSentiment ?? 1.0;
+  const marketSentiment = getDailyMarketContext(options.seed, options.day, buyer.region, options.rulesVersion).factor;
   const skills = options.unlockedSkills ?? [];
   const hasSkill = (k: string) => skills.includes(k);
 
@@ -120,7 +122,12 @@ export function computeQuotation(
   let acceptable = true;
   let refusalReason: string | undefined;
 
-  if (boycotting) {
+  const capacity = buyerType === 'MASTER' ? 3 : 4;
+  const loadout = buyerType === 'MASTER' ? (buyer as DungeonMaster).installedHazards : (buyer as AdventuringParty).equippedProducts;
+  if (loadout.length >= capacity) {
+    acceptable = false;
+    refusalReason = `Loadout full (${loadout.length}/${capacity}). Use existing supplies before purchasing another unit.`;
+  } else if (boycotting) {
     acceptable = false;
     refusalReason = `Client boycott in effect due to low trust (${buyer.trust}/100).`;
   } else if (!canAfford) {
@@ -169,15 +176,19 @@ export function executeCommercialTransaction(
     warrantyBacked: boolean;
     exclusiveDeal: boolean;
     secretProvenance: boolean;
-    marketSentiment?: number;
+    rulesVersion?: string;
   }
 ): TransactionResult {
+  if (!terms || !Number.isFinite(terms.priceMultiplier ?? 1) || (terms.priceMultiplier ?? 1) <= 0
+      || !(['warrantyBacked','exclusiveDeal','secretProvenance'] as const).every(k => typeof terms[k] === 'boolean')) {
+    return { success:false, reason:'Invalid commercial terms.' };
+  }
   // 1. Strict validation: check current authoritative product stock (Gate 3)
   if (!product || !product.id || !Array.isArray(prevState.products)) {
     return { success: false, reason: 'Invalid or missing product reference.' };
   }
   const currentProduct = prevState.products.find((p) => p && p.id === product.id);
-  if (!currentProduct || currentProduct.stock <= 0) {
+  if (!currentProduct || !Number.isSafeInteger(currentProduct.stock) || currentProduct.stock <= 0) {
     return { success: false, reason: 'Product is out of stock or reference is stale.' };
   }
 
@@ -200,11 +211,18 @@ export function executeCommercialTransaction(
   }
 
   if (
-    buyer.region &&
-    buyer.region !== prevState.activeRegion &&
-    !prevState.unlockedRegions.includes(buyer.region as any)
+    buyer.region !== prevState.activeRegion
   ) {
-    return { success: false, reason: 'Buyer is located in an inaccessible locked region.' };
+    return { success: false, reason: 'Trading is regional: select the buyer’s unlocked region before selling.' };
+  }
+
+  const loadout = buyerType === 'MASTER'
+    ? (buyer as DungeonMaster).installedHazards : (buyer as AdventuringParty).equippedProducts;
+  const capacity = buyerType === 'MASTER' ? 3 : 4;
+  if (loadout.length >= capacity) return { success: false,
+    reason: `Loadout full (${loadout.length}/${capacity}). Use existing supplies before purchasing another unit.` };
+  if (!prevState.unlockedRegions.includes(prevState.activeRegion)) {
+    return { success: false, reason: 'Active trading region is locked.' };
   }
 
   const skills = prevState.skills.filter((s) => s.unlocked).map((s) => s.effectKey);
@@ -216,7 +234,7 @@ export function executeCommercialTransaction(
     day: prevState.day,
     seed: prevState.seed,
     unlockedSkills: skills,
-    marketSentiment: terms.marketSentiment
+    rulesVersion: prevState.rulesVersion
   });
 
   if (!quotation.acceptable) {
@@ -226,6 +244,7 @@ export function executeCommercialTransaction(
   const unitPrice = quotation.unitPrice;
   const contractSeq = prevState.contractHistory.length + 1;
   const newContract: SaleContract = {
+    marketContext: getDailyMarketContext(prevState.seed, prevState.day, prevState.activeRegion, prevState.rulesVersion),
     id: `cnt_d${prevState.day}_n${contractSeq}_${currentProduct.id}`,
     day: prevState.day,
     buyerType,
@@ -255,7 +274,8 @@ export function executeCommercialTransaction(
         ...m,
         budget: Math.max(0, m.budget - unitPrice),
         trust: Math.max(10, Math.min(100, m.trust + quotation.expectedTrustDelta)),
-        installedHazards: [currentProduct.id, ...m.installedHazards.filter((h) => h !== currentProduct.id)].slice(0, 3),
+        installedHazards: [currentProduct.id, ...m.installedHazards],
+        installedResetCharges: [currentProduct.recipeComponents.includes('part_rst_09') ? 1 : 0, ...(m.installedResetCharges ?? m.installedHazards.map(() => 0))],
         memoryLog: [
           ...m.memoryLog,
           `Day ${prevState.day}: Purchased ${currentProduct.name} [#${currentProduct.formulaSignature || currentProduct.id.slice(-6)}] for ${unitPrice}g.`
@@ -273,7 +293,7 @@ export function executeCommercialTransaction(
         ...p,
         budget: Math.max(0, p.budget - unitPrice),
         trust: Math.max(10, Math.min(100, p.trust + quotation.expectedTrustDelta)),
-        equippedProducts: [currentProduct.id, ...p.equippedProducts].slice(0, 4),
+        equippedProducts: [currentProduct.id, ...p.equippedProducts],
         memoryLog: [
           ...p.memoryLog,
           `Day ${prevState.day}: Purchased ${currentProduct.name} [#${currentProduct.formulaSignature || currentProduct.id.slice(-6)}] for ${unitPrice}g.`
@@ -285,6 +305,10 @@ export function executeCommercialTransaction(
 
   const nextState: GameSaveState = {
     ...prevState,
+    phase: 'TRADE',
+    scheduledMatchups: { ...prevState.scheduledMatchups, [prevState.activeRegion]: {
+      ...prevState.scheduledMatchups[prevState.activeRegion],
+      ...(buyerType === 'MASTER' ? { masterId:buyerId } : { partyId:buyerId }) } },
     gold: prevState.gold + unitPrice,
     products: nextProducts,
     masters: nextMasters,
@@ -315,6 +339,8 @@ export function resolveConsumableWear(
 ): {
   nextEquipped: string[];
   nextInstalled: string[];
+  nextResetCharges: number[];
+  rewindsSpent: number;
 } {
   const autoResetSkill = skills.includes('auto_reset_cam');
 
@@ -330,18 +356,61 @@ export function resolveConsumableWear(
   // Master trap wear: non-resetting traps exhaust their armed tension / durability
   // unless auto-reset skill or temporal rewind loop is armed
   let nextInstalled = [...master.installedHazards];
+  let nextResetCharges = [...(master.installedResetCharges ?? master.installedHazards.map(() => 0))];
+  let rewindsSpent = 0;
   if (!autoResetSkill) {
     // Every 3 delves (or if warranty claim / breakdown occurred), oldest trap exhausts tension
     if (day % 3 === 0 || warrantyClaimsTriggered > 0) {
       if (nextInstalled.length > 0) {
-        nextInstalled = nextInstalled.slice(1);
+        if ((nextResetCharges[0] ?? 0) > 0) {
+          nextResetCharges[0] -= 1;
+          rewindsSpent = 1;
+        } else {
+          nextInstalled = nextInstalled.slice(1);
+          nextResetCharges = nextResetCharges.slice(1);
+        }
       }
     }
   }
 
   return {
     nextEquipped,
-    nextInstalled
+    nextInstalled,
+    nextResetCharges,
+    rewindsSpent
+  };
+}
+
+/** One post-raid client transition for UI and campaigns. Apply breach once, then warranty loss. */
+export function resolvePostRaidClients(
+  state: Pick<GameSaveState, 'masters' | 'parties' | 'skills'>,
+  report: ExpeditionReport
+): Pick<GameSaveState, 'masters' | 'parties'> {
+  const master = state.masters.find(m => m.id === report.masterId);
+  const party = state.parties.find(p => p.id === report.partyId);
+  const lastRoom = report.rooms.at(-1);
+  if (!master || !party || !lastRoom) throw new Error('Cannot settle an expedition without its clients and rooms.');
+  const skills = state.skills.filter(s => s.unlocked).map(s => s.effectKey);
+  const wear = resolveConsumableWear(party, master, report.warrantyClaimsTriggered, report.day, skills);
+  const breachTrust = (trust: number) => report.exclusivityBreachDetected ? Math.max(15, trust - 8) : trust;
+  return {
+    masters: state.masters.map(m => m.id === master.id ? {
+      ...m,
+      trust: breachTrust(m.trust),
+      budget: Math.max(450, m.budget + report.masterTreasuryDelta + 320),
+      installedHazards: wear.nextInstalled,
+      installedResetCharges: wear.nextResetCharges,
+      memoryLog: [...m.memoryLog, `Day ${report.day} After-Action: ${lastRoom.learnedByMaster}`],
+      desiredTrait: report.doubleSaleDemandCreated[0] || m.desiredTrait
+    } : { ...m, budget: m.budget + 180 }),
+    parties: state.parties.map(p => p.id === party.id ? {
+      ...p,
+      trust: Math.max(15, breachTrust(p.trust) - report.warrantyClaimsTriggered * 12),
+      budget: Math.max(420, p.budget + report.partyBudgetDelta + 290),
+      equippedProducts: wear.nextEquipped,
+      memoryLog: [...p.memoryLog, `Day ${report.day} After-Action: ${lastRoom.learnedByHeroes}`],
+      desiredCounter: report.doubleSaleDemandCreated.find(d => d.includes(p.name)) || p.desiredCounter
+    } : { ...p, budget: p.budget + 160 })
   };
 }
 

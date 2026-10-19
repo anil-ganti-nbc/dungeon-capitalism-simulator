@@ -1,3 +1,4 @@
+import { getDailyMarketContext } from '../engine/marketContext';
 import React, { useState, useEffect } from 'react';
 import {
   CraftedProduct,
@@ -158,7 +159,7 @@ export const TradeFloorPanel: React.FC<TradeFloorProps> = ({
       <div className="bg-[#131822] border border-slate-800 rounded-xl p-4 flex flex-wrap items-center justify-between gap-4">
         <div>
           <h2 className="font-display text-base font-bold text-slate-100">
-            Bilateral Contract Terms · Day {day}
+            Bilateral Contract Terms · Day {day} · Market ×{getDailyMarketContext(seed, day, activeRegion).factor.toFixed(3)}
           </h2>
           <p className="text-xs text-slate-400">
             Supply {activeMaster.name} on the left and {activeParty.name} on the right before resolving their encounter.
@@ -201,7 +202,7 @@ export const TradeFloorPanel: React.FC<TradeFloorProps> = ({
               onChange={(e) => updateTerms(pricePct, warranty, e.target.checked, secretMark)}
               className="accent-amber-500"
             />
-            <span>Exclusivity (+25% Price)</span>
+            <span>Exclusivity (+22% Price)</span>
           </label>
 
           <label className="flex items-center gap-1.5 text-slate-300 cursor-pointer">
@@ -300,10 +301,10 @@ export const TradeFloorPanel: React.FC<TradeFloorProps> = ({
                   return (
                     <div
                       key={prod.id}
-                      className="p-3 bg-[#0B0E14] border border-slate-800 rounded-lg flex items-center justify-between gap-3"
+                      className="p-3 bg-[#0B0E14] border border-slate-800 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3"
                     >
                       <div className="min-w-0">
-                        <div className="text-sm font-semibold text-slate-100 truncate">
+                        <div className="text-sm font-semibold text-slate-100 break-words">
                           {prod.name}{' '}
                           <span className="text-[11px] font-mono text-amber-400">[#{sigLabel}]</span>
                         </div>
@@ -311,7 +312,7 @@ export const TradeFloorPanel: React.FC<TradeFloorProps> = ({
                           Stock: {prod.stock} · Lethality {prod.potency} · DC {prod.detectionDC} · Trigger{' '}
                           {prod.triggerMassThresholdKg}kg
                         </div>
-                        <div className="text-[11px] text-slate-400 mt-0.5 truncate">
+                        <div className="text-[11px] text-slate-400 mt-0.5 break-words">
                           {prod.reactionNotes[0]}
                         </div>
                         {!acceptable && quote.refusalReason && (
@@ -336,7 +337,7 @@ export const TradeFloorPanel: React.FC<TradeFloorProps> = ({
                         title={quote.refusalReason || `Expected Trust: ${quote.expectedTrustDelta >= 0 ? '+' : ''}${quote.expectedTrustDelta}`}
                         className="min-h-[40px] px-3.5 py-2 bg-rose-600 hover:bg-rose-500 disabled:bg-slate-800 disabled:text-slate-500 text-white text-xs font-mono font-semibold rounded-lg cursor-pointer whitespace-nowrap shrink-0 tabular-nums"
                       >
-                        {quote.boycotting ? 'Boycott' : !canAfford ? 'No Budget' : `Sell (${askPrice}g)`}
+                        {quote.refusalReason?.startsWith('Loadout full') ? 'Full' : quote.boycotting ? 'Boycott' : !canAfford ? 'No Budget' : `Sell (${askPrice}g)`}
                       </button>
                     </div>
                   );
@@ -396,7 +397,7 @@ export const TradeFloorPanel: React.FC<TradeFloorProps> = ({
             <div className="p-3 bg-[#0B0E14] border border-slate-800 rounded-lg mb-4 text-xs space-y-1">
               <div className="font-mono text-emerald-300">Wanted Countermeasure: {activeParty.desiredCounter}</div>
               <div className="font-mono text-slate-400">
-                Equipped Loadout ({activeParty.equippedProducts.length}/3):{' '}
+                Equipped Loadout ({activeParty.equippedProducts.length}/4):{' '}
                 {activeParty.equippedProducts
                   .map((pid) => products.find((p) => p.id === pid)?.name || pid)
                   .join(' · ') || 'Standard Guild Issue'}
@@ -430,10 +431,10 @@ export const TradeFloorPanel: React.FC<TradeFloorProps> = ({
                   return (
                     <div
                       key={prod.id}
-                      className="p-3 bg-[#0B0E14] border border-slate-800 rounded-lg flex items-center justify-between gap-3"
+                      className="p-3 bg-[#0B0E14] border border-slate-800 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3"
                     >
                       <div className="min-w-0">
-                        <div className="text-sm font-semibold text-slate-100 truncate">
+                        <div className="text-sm font-semibold text-slate-100 break-words">
                           {prod.name}{' '}
                           <span className="text-[11px] font-mono text-emerald-400">[#{sigLabel}]</span>
                         </div>
@@ -442,7 +443,7 @@ export const TradeFloorPanel: React.FC<TradeFloorProps> = ({
                           {prod.massEffectKg !== 0 ? ` · ${prod.massEffectKg}kg Mass` : ''}
                           {prod.sulphurVulnerable ? ' · VULNERABLE TO SULPHUR' : ' · SULPHUR SAFE'}
                         </div>
-                        <div className="text-[11px] text-slate-400 mt-0.5 truncate">
+                        <div className="text-[11px] text-slate-400 mt-0.5 break-words">
                           {prod.reactionNotes[0]}
                         </div>
                         {!acceptable && quote.refusalReason && (
@@ -467,7 +468,7 @@ export const TradeFloorPanel: React.FC<TradeFloorProps> = ({
                         title={quote.refusalReason || `Expected Trust: ${quote.expectedTrustDelta >= 0 ? '+' : ''}${quote.expectedTrustDelta}`}
                         className="min-h-[40px] px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 text-xs font-mono font-semibold rounded-lg cursor-pointer whitespace-nowrap shrink-0 tabular-nums"
                       >
-                        {quote.boycotting ? 'Boycott' : !canAfford ? 'No Budget' : `Sell (${askPrice}g)`}
+                        {quote.refusalReason?.startsWith('Loadout full') ? 'Full' : quote.boycotting ? 'Boycott' : !canAfford ? 'No Budget' : `Sell (${askPrice}g)`}
                       </button>
                     </div>
                   );
