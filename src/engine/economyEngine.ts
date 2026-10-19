@@ -325,6 +325,89 @@ export function executeCommercialTransaction(
   };
 }
 
+export interface InstallationReplacementRequest {
+  masterId: string;
+  productId: string;
+  slotIndex: number;
+  expectedProductId: string;
+  expectedResetCharge: number;
+  expectedDay: number;
+  expectedContractCount: number;
+}
+
+export type CommercialTerms = Pick<QuotationOptions, 'priceMultiplier' | 'warrantyBacked' | 'exclusiveDeal' | 'secretProvenance'>;
+
+/** Plan uses the normal sale for stock, budgets, terms, trust, contracts and schedule. */
+function planInstallationReplacement(
+  state: GameSaveState,
+  request: InstallationReplacementRequest,
+  terms: CommercialTerms
+): TransactionResult {
+  const master = state.masters.find(row => row.id === request?.masterId);
+  if (!master || !Number.isSafeInteger(request.slotIndex) || request.slotIndex < 0 || request.slotIndex >= master.installedHazards.length
+      || master.installedHazards[request.slotIndex] !== request.expectedProductId
+      || master.installedResetCharges?.[request.slotIndex] !== request.expectedResetCharge
+      || state.day !== request.expectedDay || state.contractHistory.length !== request.expectedContractCount) {
+    return { success: false, reason: 'Replacement request is stale or its selected installation is invalid.' };
+  }
+  const product = state.products.find(row => row.id === request.productId);
+  if (!product) return { success: false, reason: 'Replacement product is missing.' };
+  const retired = state.products.find(row => row.id === request.expectedProductId);
+  const charges = master.installedResetCharges;
+  if (!retired || master.installedHazards.length > 3 || !charges || charges.length !== master.installedHazards.length
+      || !master.installedHazards.every((id, index) => {
+        const installed = state.products.find(row => row.id === id), charge = charges[index];
+        return installed && Number.isSafeInteger(charge) && charge >= 0 && charge <= 1
+          && (charge === 0 || installed.recipeComponents.includes('part_rst_09'));
+      })) return { success: false, reason: 'Installed loadout or reset reserves are invalid; restore a valid save before replacement.' };
+  // Compare currently resolved installation mechanics, not price/name/ID. Different need not mean stronger.
+  const signature = (p: CraftedProduct) => JSON.stringify([p.potency, p.detectionDC, p.triggerMassThresholdKg,
+    p.causesPetrification, p.emitsSulphurFog, p.counterClasses.includes('sabotage'),
+    p.recipeComponents.includes('part_trg_12'), p.recipeComponents.includes('part_rst_09')]);
+  if (product.id === retired.id || signature(product) === signature(retired)) {
+    return { success: false, reason: 'Choose a mechanically different installation; relabelling or rebuying the same hazard is not a retrofit.' };
+  }
+  const projected: GameSaveState = { ...state, masters: state.masters.map(row => row.id === master.id ? {
+    ...row,
+    installedHazards: row.installedHazards.filter((_, index) => index !== request.slotIndex),
+    installedResetCharges: row.installedResetCharges!.filter((_, index) => index !== request.slotIndex)
+  } : row) };
+  const sale = executeCommercialTransaction(projected, 'MASTER', master.id, product, terms);
+  if (!sale.success) return sale;
+  if (!Number.isSafeInteger(sale.unitPrice) || !Number.isFinite(sale.nextState!.gold) || sale.nextState!.gold > Number.MAX_SAFE_INTEGER) {
+    return { success: false, reason: 'Replacement exceeds the safe monetary range.' };
+  }
+  const contract: SaleContract = { ...sale.contract!, installationReplacement: { slotIndex: request.slotIndex,
+    retiredProductId: retired.id, retiredProductName: retired.name, retiredResetCharge: request.expectedResetCharge } };
+  return { ...sale, contract, nextState: { ...sale.nextState!,
+    contractsToday: sale.nextState!.contractsToday.map(row => row.id === contract.id ? contract : row),
+    contractHistory: sale.nextState!.contractHistory.map(row => row.id === contract.id ? contract : row),
+    masters: sale.nextState!.masters.map(row => row.id === master.id ? {
+    ...row,
+    installedHazards: master.installedHazards.map((id, index) => index === request.slotIndex ? product.id : id),
+    installedResetCharges: master.installedResetCharges!.map((charge, index) => index === request.slotIndex ? row.installedResetCharges![0] : charge),
+    memoryLog: [...row.memoryLog.slice(0, -1), `Day ${state.day}: Replaced slot ${request.slotIndex + 1}: ${retired.name} [${retired.id}] with ${product.name} [${product.id}] for ${sale.unitPrice}g; retired ${request.expectedResetCharge} reset charge(s), no refund.`]
+  } : row) } };
+}
+
+export type InstallationReplacementQuote = Pick<TransactionResult, 'success' | 'reason' | 'unitPrice'>;
+
+/** Pure preview: shares all acceptance rules with the command, never returns a state to install. */
+export function computeInstallationReplacementQuote(state: GameSaveState, request: InstallationReplacementRequest, terms: CommercialTerms): InstallationReplacementQuote {
+  const { success, reason, unitPrice } = planInstallationReplacement(state, request, terms);
+  return { success, reason, unitPrice };
+}
+
+/** Explicit paid exchange with optimistic slot/day/contract and displayed-price checks. */
+export function executeInstallationReplacement(state: GameSaveState, request: InstallationReplacementRequest, terms: CommercialTerms, expectedUnitPrice: number): TransactionResult {
+  const plan = planInstallationReplacement(state, request, terms);
+  if (!plan.success) return plan;
+  if (!Number.isSafeInteger(expectedUnitPrice) || !Number.isSafeInteger(plan.unitPrice) || plan.unitPrice !== expectedUnitPrice) {
+    return { success: false, reason: 'Replacement quote changed; review the current price before confirming.' };
+  }
+  return plan;
+}
+
 /**
  * Finite consumables and wear resolution (Fixes Codex A03).
  * Potions are single-use consumable charges: consuming a loadout item reduces the loadout,

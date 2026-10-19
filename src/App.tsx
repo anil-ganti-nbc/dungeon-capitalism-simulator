@@ -41,6 +41,7 @@ import { TitleScreen } from './components/TitleScreen';
 import { ExpeditionCanvas } from './components/ExpeditionCanvas';
 import { AlchemyLabPanel, TrapWorkshopPanel } from './components/CraftingPanels';
 import { TradeFloorPanel, FinancialsPanel } from './components/TradeAndLedgerPanels';
+import { PaidReplacementOffer } from './components/InstallationReplacementPanel';
 import {
   IntelAndStoryPanel,
   ClientDirectoryPanel,
@@ -60,6 +61,7 @@ import {
 } from './engine/saveManager';
 import {
   executeCommercialTransaction,
+  executeInstallationReplacement,
   computeRegionalFinesAndClaims,
   resolvePostRaidClients
 } from './engine/economyEngine';
@@ -355,6 +357,19 @@ export default function App() {
     },
     []
   );
+
+  const handleReplaceInstallation = useCallback((offer: PaidReplacementOffer) => {
+    setGameState(prev => {
+      const tx = executeInstallationReplacement(prev, offer.request, offer.terms, offer.unitPrice);
+      if (!tx.success || !tx.nextState) {
+        setStatusBanner(tx.reason || 'Replacement refused; nothing was charged.');
+        return prev;
+      }
+      soundFX.playCoin();
+      setStatusBanner(`Paid replacement: slot ${offer.request.slotIndex + 1}, ${tx.contract!.installationReplacement!.retiredProductName} → ${tx.contract!.productName} for ${tx.unitPrice}g. Old installation retired, no refund.`);
+      return tx.nextState;
+    });
+  }, []);
 
   // F01 & F04/F05 Fix: Resolve Explicitly Scheduled Expedition & Advance Day with Real Debt/Consumption Math
   const handleLaunchExpedition = useCallback(() => {
@@ -991,6 +1006,8 @@ export default function App() {
 
         {activeTab === 'DAY_DESK' && (
           <TradeFloorPanel
+            replacementState={gameState}
+            onReplaceInstallation={handleReplaceInstallation}
             day={gameState.day}
             seed={gameState.seed}
             activeRegion={gameState.activeRegion}

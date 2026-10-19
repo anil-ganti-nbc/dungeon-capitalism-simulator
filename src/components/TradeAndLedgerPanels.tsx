@@ -11,8 +11,12 @@ import {
 } from '../types/game';
 import { REGIONS_DATA } from '../data/world';
 import { computeQuotation } from '../engine/economyEngine';
+import { GameSaveState } from '../types/game';
+import { InstallationReplacementPanel, PaidReplacementOffer } from './InstallationReplacementPanel';
 
 interface TradeFloorProps {
+  replacementState: GameSaveState;
+  onReplaceInstallation: (offer: PaidReplacementOffer) => void;
   day: number;
   seed: number;
   activeRegion: RegionId;
@@ -53,6 +57,8 @@ interface TradeFloorProps {
 }
 
 export const TradeFloorPanel: React.FC<TradeFloorProps> = ({
+  replacementState,
+  onReplaceInstallation,
   day,
   seed,
   activeRegion,
@@ -344,6 +350,12 @@ export const TradeFloorPanel: React.FC<TradeFloorProps> = ({
                 })
               )}
             </div>
+            <InstallationReplacementPanel
+              key={`${replacementState.day}:${activeMaster.id}:${replacementState.contractHistory.length}`}
+              state={replacementState} master={activeMaster}
+              terms={{ priceMultiplier: pricePct / 100, warrantyBacked: warranty, exclusiveDeal: exclusive, secretProvenance: secretMark }}
+              onConfirm={onReplaceInstallation}
+            />
           </div>
         </div>
 
@@ -479,6 +491,12 @@ export const TradeFloorPanel: React.FC<TradeFloorProps> = ({
         </div>
       </div>
 
+      {contractsToday.some(c => c.installationReplacement) && <section aria-label="Replacement receipts" className="bg-[#131822] border border-slate-800 rounded-xl p-4 text-xs space-y-2 break-words">
+        <h4 className="font-semibold text-slate-100">Replacement receipts</h4>
+        {contractsToday.filter(c => c.installationReplacement).map(c => <p key={c.id} className="text-slate-300">
+          {c.buyerName} · slot {c.installationReplacement!.slotIndex + 1}: retired {c.installationReplacement!.retiredProductName} [{c.installationReplacement!.retiredProductId}] and {c.installationReplacement!.retiredResetCharge} reset charge(s); installed {c.productName} [{c.productId}] for {c.totalRevenue}g. No refund or salvage. Receipt {c.id}.
+        </p>)}
+      </section>}
       {/* Bottom Summary of Today's Bilateral Contracts + Launch Expedition CTA */}
       <div className="bg-[#131822] border border-slate-800 rounded-xl p-4 flex flex-wrap items-center justify-between gap-4">
         <div className="text-xs font-mono text-slate-300">
