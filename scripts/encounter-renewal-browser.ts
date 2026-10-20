@@ -1,3 +1,4 @@
+import { localhostTestURL } from './test-url';
 import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
@@ -10,8 +11,7 @@ const out=process.env.EVIDENCE_DIR??'';assert(out&&path.isAbsolute(out),'Fresh a
 fs.mkdirSync(out,{recursive:true});assert(!fs.existsSync(path.join(out,'summary.json')),'preserve outputs');
 const width=Number(process.env.B3_WIDTH??375),xlarge=process.env.B3_XLARGE==='1',cold=process.env.B3_COLD==='1';
 assert([375,412,1440].includes(width));
-const url=process.env.TEST_URL??'http://127.0.0.1:4520';
-assert(['4520','4521'].includes(new URL(url).port),'Only own allocated ports');
+const url=localhostTestURL();
 const options={headless:true,executablePath:process.env.BROWSER_PATH??'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',viewport:{width,height:width===412?915:1000},hasTouch:true,isMobile:width!==1440};
 const profile=fs.mkdtempSync(path.join(out,'owned-profile-'));
 const errors:string[]=[],screens:any[]=[],states:any={};
@@ -28,7 +28,12 @@ async function scale(){
   const size=await p.locator('html').evaluate(el=>parseFloat(getComputedStyle(el).fontSize));assert.equal(size,xlarge?20:16);return size;
 }
 const read=()=>p.evaluate(()=>JSON.parse(localStorage.getItem('trap_and_tonic_save_v2')!));
-async function desk(){await tap(p.getByRole('button',{name:/^(Bilateral Desk|Trade)$/}).first());}
+async function desk(){
+  await tap(p.getByRole('navigation',{name:'Main game navigation'}).getByRole('button',{name:'Trade',exact:true}));
+  const summary=p.getByText('Full ledger, requests & negotiations',{exact:true});
+  if(!await summary.evaluate(e=>(e.parentElement as HTMLDetailsElement).open)) await tap(summary);
+}
+async function arena(){await tap(p.getByRole('navigation',{name:'Main game navigation'}).getByRole('button',{name:'Expedition',exact:true}));}
 async function selectOriginal(masterId:string,partyId:string){await desk();await p.getByLabel('Scheduled Dungeon Master',{exact:true}).selectOption(masterId);await p.getByLabel('Scheduled Adventuring Party',{exact:true}).selectOption(partyId);}
 async function shot(name:string,target:Locator){await target.evaluate(el=>el.scrollIntoView({block:'center',behavior:'instant'}));const size=await p.locator('html').evaluate(el=>getComputedStyle(el).fontSize);const rect=await target.boundingBox();await p.screenshot({path:path.join(out,name+'.png')});screens.push({name,htmlFontSize:size,target:rect});}
 try{
@@ -38,10 +43,10 @@ try{
   assert(validateSavePayload(JSON.stringify(initial)).valid);states.fixture=initial;
   await context.addInitScript(s=>{if(!localStorage.getItem('b3-fixture-installed')){localStorage.setItem('trap_and_tonic_save_v2',JSON.stringify(s));localStorage.setItem('b3-fixture-installed','yes');}},initial);
   p=await context.newPage();p.on('pageerror',e=>errors.push(e.message));await p.goto(url);
-  await tap(p.getByRole('button',{name:/^(Continue Ledger|Open Merchant Ledger)/}));await scale();
+  await tap(p.getByRole('button',{name:/^(Continue Ledger|Open Merchant Ledger)/}));await scale();await desk();
   assert((await p.getByRole('region',{name:'Encounter-backed requests',exact:true}).innerText()).includes('No verified encounter evidence'));
   const expectedFirst=simulateRegionExpedition(initial.day,initial.seed,initial.masters[0],initial.parties[0],initial.products,[]);
-  await tap(p.getByRole('button',{name:/^Run Scheduled Expedition/}));await p.waitForFunction(()=>JSON.parse(localStorage.getItem('trap_and_tonic_save_v2')!).day===2);
+  await arena();await tap(p.getByRole('button',{name:/^Run Scheduled Expedition/}));await p.waitForFunction(()=>JSON.parse(localStorage.getItem('trap_and_tonic_save_v2')!).day===2);
   states.completed=await read();assert.deepEqual(states.completed.expeditionReports[0],expectedFirst);
   await selectOriginal(initial.masters[0].id,initial.parties[0].id);
   const pre=await read(),r=requestsFor(pre,initial.masters[0].id)[0];assert.equal(requestsFor(pre,initial.masters[0].id).length,2);
@@ -70,14 +75,14 @@ try{
   const second=requestsFor(states.paid,initial.masters[0].id)[1];
   await tap(p.getByRole('article',{name:`Encounter request ${second.id}`,exact:true}).getByRole('button',{name:'Decline this request',exact:true}));
   states.declined=await read();assert.equal(requestsFor(states.declined,initial.masters[0].id)[1].status,'DECLINED');assert.equal(states.declined.contractHistory.length,1);
-  await p.reload();await tap(p.getByRole('button',{name:/^Continue Ledger/}));
+  await p.reload();await tap(p.getByRole('button',{name:/^(Continue Ledger|Open Merchant Ledger)/}));
   const scaleImmediatelyAfterReload=await p.locator('html').evaluate(el=>getComputedStyle(el).fontSize);
-  await scale(); // Settings are NOT persisted; explicitly reapply actual XLARGE, then capture receipt.
+  await scale();await desk(); // Settings are NOT persisted; explicitly reapply actual XLARGE, then capture receipt.
   assert.deepEqual(await read(),states.declined);
   await shot('receipt-reloaded-actual-scale',history.getByRole('article').first().getByText('Paid:',{exact:false}));
   await shot('receipt-source-reloaded',history.getByRole('article').first().getByText('Observed source:',{exact:false}));
   const preRaid=await read(),expectedLater=simulateRegionExpedition(preRaid.day,preRaid.seed,preRaid.masters[0],preRaid.parties[0],preRaid.products,preRaid.contractsToday);
-  await tap(p.getByRole('button',{name:/^Run Scheduled Expedition/}));await p.waitForFunction(()=>JSON.parse(localStorage.getItem('trap_and_tonic_save_v2')!).day===3);
+  await arena();await tap(p.getByRole('button',{name:/^Run Scheduled Expedition/}));await p.waitForFunction(()=>JSON.parse(localStorage.getItem('trap_and_tonic_save_v2')!).day===3);
   states.afterRaid=await read();assert.deepEqual(states.afterRaid.expeditionReports[0],expectedLater);
   const clients=resolvePostRaidClients(preRaid,expectedLater);assert.deepEqual(states.afterRaid.masters,clients.masters);assert.deepEqual(states.afterRaid.parties,clients.parties);
   assert.deepEqual(states.afterRaid.encounterRenewal,recordCompletedEncounter(preRaid,{...preRaid,...clients,day:preRaid.day+1},expectedLater).encounterRenewal);
@@ -93,8 +98,8 @@ try{
     await p.evaluate(()=>navigator.serviceWorker.ready);await p.waitForFunction(()=>!!navigator.serviceWorker.controller);await context.setOffline(true);
     const blockedBefore=await p.evaluate(async()=>{try{await fetch('/uncached-b3-before?'+Date.now());return false;}catch{return true;}});assert(blockedBefore);
     await context.close();context=await chromium.launchPersistentContext(profile,{...options,offline:true});
-    p=await context.newPage();p.on('pageerror',e=>errors.push(e.message));await p.goto(url);await tap(p.getByRole('button',{name:/^Continue Ledger/}));
-    assert.deepEqual(await read(),states.historyAfterAdvance);await scale();
+    p=await context.newPage();p.on('pageerror',e=>errors.push(e.message));await p.goto(url);await tap(p.getByRole('button',{name:/^(Continue Ledger|Open Merchant Ledger)/}));
+    assert.deepEqual(await read(),states.historyAfterAdvance);await scale();await desk();
     const blockedAfter=await p.evaluate(async()=>{try{await fetch('/uncached-b3-after?'+Date.now());return false;}catch{return true;}});assert(blockedAfter);
     await shot('cold-receipt-actual-scale',p.getByRole('region',{name:'Encounter replacement history',exact:true}).getByRole('article').first().getByText('Paid:',{exact:false}));
     coldProof={blockedBefore,blockedAfter,newOwnedBrowserProcess:true,exactState:true};

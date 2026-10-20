@@ -1,3 +1,4 @@
+import { AssetToken, ProductArtwork } from './Artwork';
 import { getDailyMarketContext } from '../engine/marketContext';
 import React, { useState, useEffect } from 'react';
 import {
@@ -316,7 +317,7 @@ export const TradeFloorPanel: React.FC<TradeFloorProps> = ({
                     >
                       <div className="min-w-0">
                         <div className="text-sm font-semibold text-slate-100 break-words">
-                          {prod.name}{' '}
+                          <ProductArtwork product={prod}/>{prod.name}{' '}
                           <span className="text-[11px] font-mono text-amber-400">[#{sigLabel}]</span>
                         </div>
                         <div className="text-xs font-mono text-slate-400 tabular-nums">
@@ -455,7 +456,7 @@ export const TradeFloorPanel: React.FC<TradeFloorProps> = ({
                     >
                       <div className="min-w-0">
                         <div className="text-sm font-semibold text-slate-100 break-words">
-                          {prod.name}{' '}
+                          <ProductArtwork product={prod}/>{prod.name}{' '}
                           <span className="text-[11px] font-mono text-emerald-400">[#{sigLabel}]</span>
                         </div>
                         <div className="text-xs font-mono text-slate-400 tabular-nums">
@@ -706,7 +707,7 @@ export const FinancialsPanel: React.FC<FinancialsPanelProps> = ({
           {rivals.map((riv) => (
             <div key={riv.id} className="p-3.5 bg-[#0B0E14] border border-slate-800 rounded-lg text-xs">
               <div className="flex items-center justify-between mb-1">
-                <span className="font-semibold text-slate-100 text-sm">{riv.name}</span>
+                <AssetToken id={riv.id} label={riv.name} size={80}/><span className="font-semibold text-slate-100 text-sm">{riv.name}</span>
                 <span className="font-mono text-amber-400 tabular-nums">
                   Market Share: {riv.marketShare}% · Undercut: {riv.priceUndercutPct}%
                 </span>

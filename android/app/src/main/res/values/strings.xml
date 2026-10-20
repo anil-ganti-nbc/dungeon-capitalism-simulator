@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Trap &amp; Tonic</string>
+    <string name="title_activity_main">Trap &amp; Tonic</string>
+    <string name="package_name">com.trapandtonic.game</string>
+    <string name="custom_url_scheme">com.trapandtonic.game</string>
+</resources>
