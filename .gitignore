@@ -9,3 +9,8 @@ coverage/
 
 artifacts/
 dev-dist/
+
+# Native signing material is private and must never enter source/evidence archives.
+*.jks
+*.keystore
+android/local.properties

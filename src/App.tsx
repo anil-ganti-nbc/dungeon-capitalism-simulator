@@ -1,3 +1,4 @@
+import { queueNativeCheckpoint, finishNativeExit } from './native/bridge';
 import { claimSoloCatalyst } from './engine/progression';
 import { getDailyMarketContext } from './engine/marketContext';
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
@@ -32,9 +33,12 @@ import {
   mergeCraftedProductIntoInventory,
   getRegionEncounterSchedule,
   simulateRegionExpedition,
-  predictExpeditionForecast,
   verifyAndParseCatalystCode
 } from './engine/simulation';
+import { buildPlayerExpeditionForecast } from './engine/expeditionScouting';
+import { TutorialGuide, OpeningHub, QuickWorkshop, QuickTrade, CompactHistory, EntityArt, GameIcon } from './components/GamePresentation';
+import { TUTORIAL_KEY, loadGuide, reconcileGuide, startGuide, skipGuide, resumeGuide, inspectGuideReport } from './ui/tutorial';
+import { ExpeditionScoutingPanel } from './components/ExpeditionScoutingPanel';
 import { recordCompletedEncounter, declineRenewal, mergeCraftedInventoryState } from './engine/encounterRenewal';
 import { hashString } from './utils/prng';
 import { soundFX } from './utils/sound';
@@ -79,9 +83,9 @@ const WORKSPACE_NAV_ITEMS: Array<{ id: WorkspaceTab; label: string; shortLabel: 
   { id: 'ARCHIVES_CATALYST', label: 'Catalyst & Audit', shortLabel: 'Catalyst' }
 ];
 
-export default function App() {
+export default function App({ nativeNotice }: { nativeNotice?: string } = {}) {
   const [shellState, setShellState] = useState<GameShellState>('TITLE_MENU');
-  const [activeTab, setActiveTab] = useState<WorkspaceTab>('DAY_DESK');
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>('HOME');
   const [activeRoomIdx, setActiveRoomIdx] = useState<number>(0);
   const [statusBanner, setStatusBanner] = useState<string>(
     'Morning Ledger Open: Inspect Verified Facts, brew tonics or traps, supply both sides, and resolve the scheduled expedition.'
@@ -97,16 +101,52 @@ export default function App() {
   });
 
   const [loaded] = useState(() => loadGameWithRecovery(localStorage));
-  const [recoveryNotice, setRecoveryNotice] = useState(loaded.notice);
+  const [recoveryNotice, setRecoveryNotice] = useState(loaded.notice ?? nativeNotice);
   const saveBlocked = React.useRef(!!loaded.writeBlocked);
   const [gameState, setGameState] = useState<GameSaveState>(loaded.state);
+  const [guide, setGuide] = useState(() => {
+    let raw: string | null = null;
+    try { raw = localStorage.getItem(TUTORIAL_KEY); } catch { /* campaign storage is handled separately */ }
+    return loadGuide(raw, loaded.state, loaded.source === 'FRESH' && !loaded.writeBlocked);
+  });
+  const [guideStorageFailed, setGuideStorageFailed] = useState(false);
+  useEffect(() => { setGuide(g => reconcileGuide(g, gameState)); }, [gameState]);
+  useEffect(() => {
+    try { localStorage.setItem(TUTORIAL_KEY, JSON.stringify(guide)); setGuideStorageFailed(false); queueNativeCheckpoint(); }
+    catch { setGuideStorageFailed(true); }
+  }, [guide]);
+  useEffect(() => { const main = document.querySelector('main'); if (main) main.scrollTop = 0; }, [activeTab]);
 
   // Atomic save rotation on state update & app lifecycle interruption (F08, A02)
   const persistAtomicSave = useCallback((stateToSave: GameSaveState) => {
-    if (!saveBlocked.current && !persistAtomicSaveSafe(stateToSave, localStorage)) {
+    if (saveBlocked.current) return false;
+    if (!persistAtomicSaveSafe(stateToSave, localStorage)) {
       setRecoveryNotice('Save failed validation or storage is full. Existing checkpoints preserved; export your ledger.');
+      return false;
     }
+    queueNativeCheckpoint();
+    return true;
   }, []);
+
+  useEffect(() => {
+    const pause = () => { persistAtomicSave(gameState); setShellState(s => s === 'TITLE_MENU' ? s : 'PAUSED'); };
+    const back = () => {
+      if (!persistAtomicSave(gameState)) return;
+      if (shellState === 'TITLE_MENU') { void finishNativeExit().catch(() => setRecoveryNotice('Native checkpoint could not be verified; app kept open.')); }
+      else if (shellState === 'PAUSED') setShellState('PLAYING');
+      else if (activeTab !== 'HOME') setActiveTab('HOME');
+      else setShellState('PAUSED');
+    };
+    const warning = () => setRecoveryNotice('Native backup write failed. Validated local checkpoints remain; export your ledger before uninstalling or clearing app data.');
+    window.addEventListener('trap-and-tonic-native-pause', pause);
+    window.addEventListener('trap-and-tonic-native-back', back);
+    window.addEventListener('trap-and-tonic-native-save-warning', warning);
+    return () => {
+      window.removeEventListener('trap-and-tonic-native-pause', pause);
+      window.removeEventListener('trap-and-tonic-native-back', back);
+      window.removeEventListener('trap-and-tonic-native-save-warning', warning);
+    };
+  }, [gameState, shellState, activeTab, persistAtomicSave]);
 
   useEffect(() => {
     persistAtomicSave(gameState);
@@ -179,24 +219,12 @@ export default function App() {
     ]
   );
 
-  // Pre-expedition deterministic forecast (Gate 4)
-  const expeditionForecast = useMemo(() => {
-    return predictExpeditionForecast(
-      gameState.day,
-      gameState.seed,
-      activeRegionSchedule.currentMaster,
-      activeRegionSchedule.currentParty,
-      gameState.products,
-      gameState.contractsToday
-    );
-  }, [
-    gameState.day,
-    gameState.seed,
+  // Player guidance is a snapshot of known inputs, never a simulated future report.
+  const expeditionForecast = useMemo(() => buildPlayerExpeditionForecast(
     activeRegionSchedule.currentMaster,
     activeRegionSchedule.currentParty,
-    gameState.products,
-    gameState.contractsToday
-  ]);
+    gameState.products
+  ), [activeRegionSchedule.currentMaster, activeRegionSchedule.currentParty, gameState.products]);
 
   const handleSelectScheduledMatchup = useCallback((masterId: string, partyId: string) => {
     setGameState((prev) => ({
@@ -222,6 +250,7 @@ export default function App() {
       partyId: 'pty_warrens_1'
     };
     setGameState(base);
+    setGuide(startGuide(base, false));
     setShellState('PLAYING');
     setActiveTab('DAY_DESK');
     setStatusBanner(
@@ -655,29 +684,8 @@ export default function App() {
     [gameState.expeditionReports]
   );
 
-  // F01 Fix: Preview report uses the exact scheduled encounter if no expedition has been resolved on this day yet
-  const activeCanvasReport = useMemo(() => {
-    if (latestReport && latestReport.day === gameState.day - 1 && gameState.phase === 'EVENING') {
-      return latestReport;
-    }
-    return simulateRegionExpedition(
-      gameState.day,
-      gameState.seed,
-      activeRegionSchedule.currentMaster,
-      activeRegionSchedule.currentParty,
-      gameState.products,
-      gameState.contractsToday
-    );
-  }, [
-    latestReport,
-    gameState.day,
-    gameState.phase,
-    gameState.seed,
-    activeRegionSchedule.currentMaster,
-    activeRegionSchedule.currentParty,
-    gameState.products,
-    gameState.contractsToday
-  ]);
+  // Replays are evidence from completed expeditions, including after later sales or region changes.
+  const activeCanvasReport = latestReport;
 
   const masterSalesCount = useMemo(
     () => gameState.contractHistory.filter((c) => c.buyerType === 'MASTER').length,
@@ -728,8 +736,9 @@ export default function App() {
       {/* Top Bar Contract: Zone 1 Brand Wordmark — Zone 2 Concise Nav Links — Zone 3 Primary Action */}
       <header className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-4 px-4 sm:px-5 py-2.5 bg-[#0B0E14] border-b border-slate-800/90 shrink-0">
         <button
-          onClick={() => setShellState('TITLE_MENU')}
-          className="font-display text-base sm:text-lg font-bold tracking-tight text-amber-400 hover:text-amber-300 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+          aria-label="Home"
+          onClick={() => setActiveTab('HOME')}
+          className="font-display text-base sm:text-lg font-bold tracking-tight text-amber-400 hover:text-amber-300 transition-colors whitespace-nowrap shrink-0 cursor-pointer min-h-[48px]"
         >
           Trap &amp; Tonic
         </button>
@@ -766,10 +775,18 @@ export default function App() {
       {/* Main Scrollable Game Shell Container (Supports One-Thumb Portrait Mode or Full 1440px Desktop) */}
       {recoveryNotice && <div role="alert" className="px-4 py-3 text-sm text-amber-200 bg-amber-950 border border-amber-700 break-words">{recoveryNotice}</div>}
       <main
-        className={`flex-1 overflow-y-auto overflow-x-hidden max-w-full px-4 sm:px-6 pt-4 pb-24 lg:pb-6 space-y-5 ${
+        className={`flex-1 overflow-y-auto overflow-x-hidden max-w-full px-4 sm:px-6 pt-4 pb-24 space-y-5 ${
           a11y.oneThumbPortraitMode ? 'max-w-md mx-auto w-full border-x border-slate-800 pb-28' : 'max-w-[1440px] mx-auto w-full'
         }`}
       >
+        <TutorialGuide guide={guide} currentTab={activeTab} navigate={setActiveTab}
+          skip={() => setGuide(g => skipGuide(g))} resume={() => setGuide(g => resumeGuide(g, gameState))}
+          reset={() => setGuide(startGuide(gameState))} />
+        {guideStorageFailed && <p role="status">Guide progress could not be saved. Campaign saving is separate; continue normally or export your ledger.</p>}
+        {activeTab === 'HOME' && <OpeningHub state={gameState} master={activeRegionSchedule.currentMaster} party={activeRegionSchedule.currentParty} navigate={setActiveTab} guide={guide} />}
+        {activeTab === 'HISTORY' && <CompactHistory state={gameState} onInspect={id => setGuide(g => inspectGuideReport(g, gameState, id))} />}
+        <details className="rounded-lg border border-slate-800 p-3">
+        <summary className="min-h-[48px] py-3 cursor-pointer text-slate-300">Region &amp; campaign details · Day {gameState.day} · {gameState.gold}g</summary>
         {/* Perimeter Telemetry Strip & Active Dungeon Region Selector */}
         <div className="flex flex-wrap items-center justify-between gap-4 pb-3 border-b border-slate-800/80">
           <div className="flex flex-wrap items-center gap-2 text-xs font-mono tabular-nums text-slate-300">
@@ -822,80 +839,26 @@ export default function App() {
             })}
           </div>
         </div>
+        </details>
 
         {/* Live Action Consequence Banner with Explicit Scheduled Matchup */}
         <div className="px-4 py-2.5 bg-[#131822] border border-slate-800 rounded-lg flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
-          <div className="space-y-0.5 min-w-0 flex-1">
-            <div className="text-slate-200">{statusBanner}</div>
-            <div className="text-amber-400/90 truncate">
-              Scheduled Matchup: {activeRegionSchedule.currentParty.name} vs {activeRegionSchedule.currentMaster.name} · Next: {activeRegionSchedule.nextParty.name} vs {activeRegionSchedule.nextMaster.name}
-            </div>
-          </div>
-          <div className="flex items-center gap-3 shrink-0 max-w-full">
-            <button
-              onClick={handleLaunchExpedition}
-              className="min-h-[44px] px-4 py-2 bg-amber-600 hover:bg-amber-500 text-slate-950 font-semibold rounded-lg cursor-pointer max-w-full text-left sm:text-center text-xs font-mono leading-tight whitespace-normal"
-            >
-              Run Scheduled Expedition ({activeRegionSchedule.currentParty.name} vs {activeRegionSchedule.currentMaster.name}) →
-            </button>
-          </div>
+          <details className="min-w-0 flex-1"><summary className="min-h-[48px] py-3 cursor-pointer">Latest shop event</summary><p role="status" className="text-slate-200 break-words">{statusBanner}</p></details>
+          {activeTab === 'EXPEDITION_MAP' && <button className={`min-h-[48px] w-full p-3 rounded-lg font-semibold whitespace-normal ${guide.status==='active'&&guide.step===3?'bg-slate-800 text-slate-200':'bg-amber-500 text-slate-950'}`} onClick={handleLaunchExpedition}>Run Scheduled Expedition ({activeRegionSchedule.currentParty.name} vs {activeRegionSchedule.currentMaster.name}) →</button>}
         </div>
 
         {/* Active Workspace View */}
         {activeTab === 'EXPEDITION_MAP' && (
           <div className="space-y-4">
-            {/* Pre-Expedition Deterministic Causal Forecast (Gate 4) */}
-            <div className="p-4 bg-[#131822] border border-slate-800 rounded-xl space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-                  <span className="text-xs font-mono font-semibold text-slate-200">
-                    PRE-EXPEDITION INTELLIGENCE &amp; CAUSAL FORECAST
-                  </span>
-                </div>
-                <div className="text-xs font-mono text-amber-400">
-                  {expeditionForecast.summaryHeadline}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                {expeditionForecast.predictedRooms.map((rm) => (
-                  <div
-                    key={`forecast_${rm.roomIndex}`}
-                    className="p-3 bg-[#0B0E14] border border-slate-800/80 rounded-lg text-xs font-mono space-y-1.5"
-                  >
-                    <div className="flex items-center justify-between text-slate-400">
-                      <span>CHAMBER 0{rm.roomIndex}</span>
-                      <span
-                        className={
-                          rm.outcome === 'TRAP_BYPASSED' || rm.outcome === 'COUNTER_SUCCEEDED'
-                            ? 'text-emerald-400 font-semibold'
-                            : rm.outcome === 'REACTION_FAILURE'
-                            ? 'text-amber-400 font-semibold'
-                            : 'text-rose-400 font-semibold'
-                        }
-                      >
-                        {rm.outcome}
-                      </span>
-                    </div>
-                    <div className="text-slate-200 font-semibold truncate">{rm.hazardName}</div>
-                    <div className="text-slate-400 text-[11px] leading-relaxed">
-                      {rm.causalExplanation}
-                    </div>
-                    {rm.chemicalReaction?.includes('PARADOX MASS-INVERSION') && (
-                      <div className="text-amber-400 text-[11px] font-semibold bg-amber-950/40 p-1.5 rounded border border-amber-800/50">
-                        ⚠ Inversion Detonation: Lightweight morph triggers inverted polarity!
-                      </div>
-                    )}
-                    {rm.chemicalReaction?.includes('Temporal Rewind Loop') && (
-                      <div className="text-cyan-400 text-[11px] bg-cyan-950/40 p-1.5 rounded border border-cyan-800/50">
-                        ↻ Temporal module: one paid charge prevents one wear removal; settlement persists after the raid.
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
+            <h1 className="text-2xl font-serif text-amber-200">Expedition</h1>
+            <EntityArt id={gameState.activeRegion} label={gameState.activeRegion} scene />
+            <p className="text-slate-300">{activeRegionSchedule.currentParty.name} vs {activeRegionSchedule.currentMaster.name}. Scout current facts; no future rolls are revealed.</p>
+            <details className="border border-slate-700 rounded-xl p-3"><summary className="min-h-[48px] py-3 cursor-pointer">Scout loadout &amp; uncertainty</summary><ExpeditionScoutingPanel scouting={expeditionForecast} /></details>
+            <details className="border border-slate-700 rounded-xl p-3"><summary className="min-h-[48px] py-3 cursor-pointer">Completed replay &amp; technical breakdown</summary>
+            <div role={activeCanvasReport ? 'region' : undefined} aria-label={activeCanvasReport ? 'Completed expedition replay' : undefined} className="space-y-4">
+            {activeCanvasReport ? <h2 className="text-base text-slate-100 font-semibold">
+              Last completed expedition — Day {activeCanvasReport.day}, {activeCanvasReport.region}: {activeCanvasReport.partyName} vs {activeCanvasReport.masterName}. Historical replay, not the next scheduled raid.
+            </h2> : <p className="text-base text-slate-200">No completed expedition yet. The empty replay stage below is not a preview of upcoming results.</p>}
 
             {/* 60fps Live Dungeon Expedition Viewport with >=85% Unobstructed Playfield & pointer-events:none HUD */}
             <div className="relative w-full h-[380px] sm:h-[430px] rounded-xl overflow-hidden border border-slate-800 bg-[#0B0E14]">
@@ -910,6 +873,7 @@ export default function App() {
 
             </div>
             {/* Status and room controls occupy their own flow; never cover the touch playfield. */}
+            {activeCanvasReport && <>
             <div className="p-3 bg-[#0B0E14] border border-slate-800 rounded-lg space-y-3">
                 <div className="flex items-start justify-between gap-4">
                   <div className="bg-[#0B0E14]/90 border border-slate-800 px-3 py-1.5 rounded text-xs font-mono tabular-nums text-slate-200">
@@ -1002,10 +966,16 @@ export default function App() {
                 </div>
               ))}
             </div>
+            </>}
+            </div>
+            </details>
           </div>
         )}
 
         {activeTab === 'DAY_DESK' && (
+          <div className="space-y-4">
+          <QuickTrade state={gameState} master={activeRegionSchedule.currentMaster} party={activeRegionSchedule.currentParty} onSell={handleExecuteSale} />
+          <details className="border border-slate-700 p-3 rounded-xl"><summary className="min-h-[48px] py-3 cursor-pointer">Full ledger, requests &amp; negotiations</summary>
           <TradeFloorPanel
             replacementState={gameState}
             onDeclineRenewal={id => setGameState(prev => declineRenewal(prev, id))}
@@ -1036,9 +1006,13 @@ export default function App() {
             onExecuteSale={handleExecuteSale}
             onLaunchExpedition={handleLaunchExpedition}
           />
+          </details></div>
         )}
 
         {activeTab === 'ALCHEMY_LAB' && (
+          <div className="space-y-4">
+          <QuickWorkshop state={gameState} onBrew={handleBrewProduct} emphasise={guide.status!=='active'||guide.step===0} />
+          <details className="border border-slate-700 p-3 rounded-xl"><summary className="min-h-[48px] py-3 cursor-pointer">Custom brewing &amp; ingredient market</summary>
           <AlchemyLabPanel
             gold={gameState.gold}
             unlockedRegions={gameState.unlockedRegions}
@@ -1048,6 +1022,7 @@ export default function App() {
             onBrewProduct={handleBrewProduct}
             onBuyReagent={handleBuyReagent}
           />
+          </details></div>
         )}
 
         {activeTab === 'TRAP_WORKSHOP' && (
@@ -1147,33 +1122,18 @@ export default function App() {
               if (!persistAtomicSaveSafe(check.state, localStorage)) return false;
               saveBlocked.current = false;
               setGameState(check.state);
+              setGuide(startGuide(check.state, false));
               setRecoveryNotice(`Imported validated ledger: Day ${check.state.day}.`);
               return true;
             }}
           />
         )}
+      <details className="rounded-lg border border-slate-700 p-3"><summary className="min-h-[48px] py-3 cursor-pointer">More tools · Traps, clients, skills &amp; archives</summary><nav aria-label="All game tools" className="flex flex-wrap gap-2">{WORKSPACE_NAV_ITEMS.map(item => <button key={item.id} onClick={() => setActiveTab(item.id)} className="min-h-[48px] px-3 py-2 bg-slate-800 rounded-lg text-slate-200">{item.label}</button>)}</nav></details>
       </main>
 
       {/* F06/F07 Fix: Ergonomic Bottom Thumb Navigation Bar for Mobile (<1024px) & One-Thumb Portrait Mode (Includes ALL 9 Tabs including Skills!) */}
-      <nav
-        aria-label="Mobile and One-Thumb Workspace Navigation"
-        className={`${
-          a11y.oneThumbPortraitMode ? 'flex' : 'flex lg:hidden'
-        } fixed bottom-0 inset-x-0 z-40 bg-[#0B0E14]/95 border-t border-slate-800 px-2 py-1.5 overflow-x-auto items-center justify-start sm:justify-center gap-1`}
-      >
-        {WORKSPACE_NAV_ITEMS.map((item) => (
-          <button
-            key={item.id}
-            onClick={() => setActiveTab(item.id)}
-            className={`min-h-[44px] min-w-[64px] px-2.5 py-1.5 text-xs font-mono rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer flex flex-col items-center justify-center ${
-              activeTab === item.id
-                ? 'bg-amber-600 text-slate-950 font-bold'
-                : 'bg-[#131822] text-slate-300 hover:text-white border border-slate-800'
-            }`}
-          >
-            <span>{item.shortLabel}</span>
-          </button>
-        ))}
+      <nav aria-label="Main game navigation" className="fixed bottom-0 inset-x-0 z-40 bg-[#0B0E14] border-t border-slate-700 p-2 grid grid-cols-4 gap-1">
+        {[{id:'ALCHEMY_LAB',label:'Workshop',color:'border-emerald-500'},{id:'DAY_DESK',label:'Trade',color:'border-sky-500'},{id:'EXPEDITION_MAP',label:'Expedition',color:'border-amber-500'},{id:'HISTORY',label:'History',color:'border-violet-500'}].map(item => <button key={item.id} aria-current={activeTab===item.id?'page':undefined} onClick={() => setActiveTab(item.id as WorkspaceTab)} className={`min-h-[48px] min-w-0 p-1 rounded-lg border-t-2 flex flex-col items-center justify-center gap-1 ${item.color} ${activeTab===item.id?'bg-slate-700 text-white font-semibold':'bg-slate-900 text-slate-300'}`} style={{fontSize:'.75rem'}}><GameIcon id={item.id==='ALCHEMY_LAB'?'icon-craft':item.id==='DAY_DESK'?'icon-trade':item.id==='EXPEDITION_MAP'?'icon-expedition':'icon-ledger'} /><span>{item.label}</span></button>)}
       </nav>
 
       {/* Pause & Accessibility Modal */}

@@ -8,6 +8,7 @@ import {
   ReagentSlotRole,
   TrapSlotRole
 } from '../types/game';
+import { AssetToken } from './Artwork';
 import { REAGENTS_CATALOG, TRAP_PARTS_CATALOG } from '../data/catalog';
 import { synthesizeAlchemyProduct, assembleTrapProduct } from '../engine/simulation';
 
@@ -203,7 +204,7 @@ export const AlchemyLabPanel: React.FC<AlchemyLabProps> = ({
                       </option>
                     ))}
                   </select>
-                  <p className="text-xs text-slate-400 mt-1.5">{currentObj.description}</p>
+                  <div className="flex items-center gap-2 mt-2"><AssetToken id={currentObj.id} label={currentObj.name}/><p className="text-xs text-slate-400">{currentObj.description}</p></div>
                 </div>
               );
             })}
@@ -513,7 +514,7 @@ export const TrapWorkshopPanel: React.FC<TrapWorkshopProps> = ({
                       </option>
                     ))}
                   </select>
-                  <p className="text-[11px] text-slate-400 mt-1 line-clamp-2">{currentPart.description}</p>
+                  <div className="flex items-center gap-2 mt-2"><AssetToken id={currentPart.id} label={currentPart.name}/><p className="text-[11px] text-slate-400 line-clamp-2">{currentPart.description}</p></div>
                 </div>
               );
             })}

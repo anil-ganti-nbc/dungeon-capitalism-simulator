@@ -7,6 +7,8 @@ export type RegionId = 'cellar' | 'warrens' | 'blackspire' | 'vault';
 export type DifficultyTier = 'Easy' | 'Normal' | 'Hard' | 'Expert';
 
 export type WorkspaceTab =
+  | 'HOME'
+  | 'HISTORY'
   | 'DAY_DESK'
   | 'ALCHEMY_LAB'
   | 'TRAP_WORKSHOP'

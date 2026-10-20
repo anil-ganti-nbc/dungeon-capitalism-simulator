@@ -1,0 +1,1339 @@
+{
+  "licence": "original project artwork",
+  "author": "Hermes art session20261020_024131_16fdab",
+  "art_direction": "Counterfeit Ledger — ink-cut silhouettes, warm paper light, brass/oxidised teal; no external fonts",
+  "runtime_integration": "NOT performed; builder sole runtime writer",
+  "assets": [
+    {
+      "asset_id": "scene-cellar",
+      "filename": "assets/scene-cellar.svg",
+      "accessible_name": "The Rat King's Cellar",
+      "viewBox": "0 0 640 360",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Hub backdrop 320×180; region illustration. Decorative, never a future room layout.",
+      "kind": "region",
+      "source_entity_ids": [
+        "cellar"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "6a2d46921533a3f954cbf76da210d51fb57c65d57b43bd817878f87979809b3e"
+    },
+    {
+      "asset_id": "scene-warrens",
+      "filename": "assets/scene-warrens.svg",
+      "accessible_name": "The Gilded Warrens",
+      "viewBox": "0 0 640 360",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Region illustration 320×180; mine/rail/sulphur atmosphere, not a simulated map.",
+      "kind": "region",
+      "source_entity_ids": [
+        "warrens"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "05e37a05a08670008ec24ef67513145f7ffbf9586ece4a2febd65a6da280ce14"
+    },
+    {
+      "asset_id": "scene-blackspire",
+      "filename": "assets/scene-blackspire.svg",
+      "accessible_name": "Blackspire Labyrinth",
+      "viewBox": "0 0 640 360",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Region illustration 320×180. Fortress/inspection-eye imagery, no lore event claim.",
+      "kind": "region",
+      "source_entity_ids": [
+        "blackspire"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "b4b4b6fd7c15039f104eec92b500c3c24658c7460f7e8f1a5b674fd14b1ecabe"
+    },
+    {
+      "asset_id": "scene-vault",
+      "filename": "assets/scene-vault.svg",
+      "accessible_name": "The Paradox Vault",
+      "viewBox": "0 0 640 360",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Region illustration 320×180; impossible geometry decorative, not an unlock/catalyst proof.",
+      "kind": "region",
+      "source_entity_ids": [
+        "vault"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "c7ca58120407a5154106f6c3fdba7c6c3666c0f2c40b5f413644c28c17583f36"
+    },
+    {
+      "asset_id": "portrait-dm_cellar_1",
+      "filename": "assets/portrait-dm_cellar_1.svg",
+      "accessible_name": "Skritch the Under-Bailiff",
+      "viewBox": "0 0 256 256",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Client token 64–112px; bailiff cap, toll keys, guarded ledger. Appearance provisional.",
+      "kind": "portrait",
+      "source_entity_ids": [
+        "dm_cellar_1"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "6ab9c6fe8cf6af13b7bd8b6e566666cb1c922aa4e0cb4509d25acc9b8b083a5a"
+    },
+    {
+      "asset_id": "portrait-dm_cellar_2",
+      "filename": "assets/portrait-dm_cellar_2.svg",
+      "accessible_name": "Matron Brine-Bog",
+      "viewBox": "0 0 256 256",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Client token64–112px; swamp-witch mushroom headdress and staff. No new spells implied.",
+      "kind": "portrait",
+      "source_entity_ids": [
+        "dm_cellar_2"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "65e055efb2c25d28f8e243cf9216fbc4b2529ad676f21778d29c736ef7ead391"
+    },
+    {
+      "asset_id": "portrait-dm_cellar_3",
+      "filename": "assets/portrait-dm_cellar_3.svg",
+      "accessible_name": "Alderman Vance (Disgraced)",
+      "viewBox": "0 0 256 256",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Client token64–112px; disgraced magistrate wig, robe and account papers.",
+      "kind": "portrait",
+      "source_entity_ids": [
+        "dm_cellar_3"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "725f3786afd56c8bec3fe14682a16899f60246b083c2615bf56fa87f9cd95b0b"
+    },
+    {
+      "asset_id": "party-pty_cellar_1",
+      "filename": "assets/party-pty_cellar_1.svg",
+      "accessible_name": "The Cobblestone Irregulars",
+      "viewBox": "0 0 256 256",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Group identity token96–144px; silhouettes reflect source member count/roles. Not individual portrait substitution.",
+      "kind": "party_portrait",
+      "source_entity_ids": [
+        "pty_cellar_1"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "f795e9f91bd9a8b7375e685ad716a778bab4e1b232e998efb8c2b2291a3dfd9b"
+    },
+    {
+      "asset_id": "party-pty_cellar_2",
+      "filename": "assets/party-pty_cellar_2.svg",
+      "accessible_name": "Lantern & Spade Co-op",
+      "viewBox": "0 0 256 256",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Group identity token96–144px; silhouettes reflect source member count/roles. Not individual portrait substitution.",
+      "kind": "party_portrait",
+      "source_entity_ids": [
+        "pty_cellar_2"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "30db984bbc4ef2f0ca8114d3f44d7414ab738ec427de40734934aa4f0348fad2"
+    },
+    {
+      "asset_id": "party-pty_cellar_3",
+      "filename": "assets/party-pty_cellar_3.svg",
+      "accessible_name": "Gutter-Crown Mercenaries",
+      "viewBox": "0 0 256 256",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Group identity token96–144px; silhouettes reflect source member count/roles. Not individual portrait substitution.",
+      "kind": "party_portrait",
+      "source_entity_ids": [
+        "pty_cellar_3"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "7df82cea2fb0625e79b6ca4d7acca7b76bb2a3425f2c33b0e150a602a5f6fa8c"
+    },
+    {
+      "asset_id": "party-pty_cellar_4",
+      "filename": "assets/party-pty_cellar_4.svg",
+      "accessible_name": "Novices of St. Jude",
+      "viewBox": "0 0 256 256",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Group identity token96–144px; silhouettes reflect source member count/roles. Not individual portrait substitution.",
+      "kind": "party_portrait",
+      "source_entity_ids": [
+        "pty_cellar_4"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "d7b1b2b24e57ae3e0e9264baa354e4eafbe593b9d01e8d4a61207903531631b1"
+    },
+    {
+      "asset_id": "hero-cellar1-0",
+      "filename": "assets/hero-cellar1-0.svg",
+      "accessible_name": "Halvar Mud-Boot",
+      "viewBox": "0 0 256 256",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Named source individual portrait64–112px. Appearance artistic, role from source.",
+      "kind": "individual_portrait",
+      "source_entity_ids": [
+        "member:pty_cellar_1:0:Halvar Mud-Boot"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "d8bbc473f8f43cce9d0bf071ba3962adbbf8098a4b7947f44e253ef31028515e"
+    },
+    {
+      "asset_id": "hero-cellar1-1",
+      "filename": "assets/hero-cellar1-1.svg",
+      "accessible_name": "Pip Quick-Fingers",
+      "viewBox": "0 0 256 256",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Named source individual portrait64–112px. Appearance artistic, role from source.",
+      "kind": "individual_portrait",
+      "source_entity_ids": [
+        "member:pty_cellar_1:1:Pip Quick-Fingers"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "3b92d1c85bc03e215f4d3076b980e1a10741a4436f5765b1517c62ea70816390"
+    },
+    {
+      "asset_id": "hero-cellar1-2",
+      "filename": "assets/hero-cellar1-2.svg",
+      "accessible_name": "Sister Marta",
+      "viewBox": "0 0 256 256",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Named source individual portrait64–112px. Appearance artistic, role from source.",
+      "kind": "individual_portrait",
+      "source_entity_ids": [
+        "member:pty_cellar_1:2:Sister Marta"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "2693ff3e2fee4609c8f053a1d7b6a4028347d609119b3a78d5e8fad71035510b"
+    },
+    {
+      "asset_id": "guide-merchant",
+      "filename": "assets/guide-merchant.svg",
+      "accessible_name": "Your merchant — optional tutorial avatar",
+      "viewBox": "0 0 256 256",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Tutorial avatar80–112px. Unnamed player-role illustration, NOT new NPC, narrator lore, named quest giver or plot authority.",
+      "kind": "guide",
+      "source_entity_ids": [
+        "protagonist:unnamed-merchant"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "2a02064b04b18874f1a5793e9ca337aa9979ce7a529f48485760082d06646f3a"
+    },
+    {
+      "asset_id": "item-prod_antidote_unstabilised",
+      "filename": "assets/item-prod_antidote_unstabilised.svg",
+      "accessible_name": "Standard Basilisk Antidote (Unstabilised)",
+      "viewBox": "0 0 160 160",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Stock/craft/result illustration64–96px; all names/prices/traits live outside SVG. Product description is not new mechanics proof.",
+      "kind": "product",
+      "source_entity_ids": [
+        "prod_antidote_unstabilised"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "ec2af5028e66c4f0ec1a832fd77c1f0cf8a31736f1a85368efd300e07734b5d1"
+    },
+    {
+      "asset_id": "item-prod_antidote_chelated",
+      "filename": "assets/item-prod_antidote_chelated.svg",
+      "accessible_name": "Quartz-Chelated Basilisk Antidote",
+      "viewBox": "0 0 160 160",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Stock/craft/result illustration64–96px; all names/prices/traits live outside SVG. Product description is not new mechanics proof.",
+      "kind": "product",
+      "source_entity_ids": [
+        "prod_antidote_chelated"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "6efc1f2c9fc2350a88258ebbdaefa6b7e814374f2bc4a6f9043dc3d091444e14"
+    },
+    {
+      "asset_id": "item-prod_chicken_morph",
+      "filename": "assets/item-prod_chicken_morph.svg",
+      "accessible_name": "Bantam Chicken-Morph Draught",
+      "viewBox": "0 0 160 160",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Stock/craft/result illustration64–96px; all names/prices/traits live outside SVG. Product description is not new mechanics proof.",
+      "kind": "product",
+      "source_entity_ids": [
+        "prod_chicken_morph"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "e8cbdd53e2311cafe17518bb3ec8def14cfe9991c90d43cd8f6ac2d2785b3427"
+    },
+    {
+      "asset_id": "item-prod_breather_mask",
+      "filename": "assets/item-prod_breather_mask.svg",
+      "accessible_name": "Charcoal Alchemical Breather Tonic",
+      "viewBox": "0 0 160 160",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Stock/craft/result illustration64–96px; all names/prices/traits live outside SVG. Product description is not new mechanics proof.",
+      "kind": "product",
+      "source_entity_ids": [
+        "prod_breather_mask"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "66f1f1a13f8833547d491fae8e8948dbfa458c6fbb3b0ea4390449e073d57239"
+    },
+    {
+      "asset_id": "item-prod_rust_solvent",
+      "filename": "assets/item-prod_rust_solvent.svg",
+      "accessible_name": "Rust-Monster Gear Solvent Bomb",
+      "viewBox": "0 0 160 160",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Stock/craft/result illustration64–96px; all names/prices/traits live outside SVG. Product description is not new mechanics proof.",
+      "kind": "product",
+      "source_entity_ids": [
+        "prod_rust_solvent"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "6d983fc2699114f17f95d9816652faa428d670d0b6fb80fb2b8abf4088c5fb98"
+    },
+    {
+      "asset_id": "item-prod_trap_plate_spikes",
+      "filename": "assets/item-prod_trap_plate_spikes.svg",
+      "accessible_name": "45kg Pressure-Plate Spike Battery",
+      "viewBox": "0 0 160 160",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Stock/craft/result illustration64–96px; all names/prices/traits live outside SVG. Product description is not new mechanics proof.",
+      "kind": "product",
+      "source_entity_ids": [
+        "prod_trap_plate_spikes"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "956b21f73c7d9e04d8b1f1bd9638b88a7865eb5b5c9366508eac725f6b4bbf12"
+    },
+    {
+      "asset_id": "item-prod_trap_sulphur_fog",
+      "filename": "assets/item-prod_trap_sulphur_fog.svg",
+      "accessible_name": "Pneumatic Sulphur-Fog Machine",
+      "viewBox": "0 0 160 160",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Stock/craft/result illustration64–96px; all names/prices/traits live outside SVG. Product description is not new mechanics proof.",
+      "kind": "product",
+      "source_entity_ids": [
+        "prod_trap_sulphur_fog"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "7372872ee0cc75b9a5158a1df5b162cc2d94a2d37cf1aa073f9a6186c5845ca4"
+    },
+    {
+      "asset_id": "item-prod_hazard_basilisk",
+      "filename": "assets/item-prod_hazard_basilisk.svg",
+      "accessible_name": "Armored Cave-Basilisk Lair Module",
+      "viewBox": "0 0 160 160",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Stock/craft/result illustration64–96px; all names/prices/traits live outside SVG. Product description is not new mechanics proof.",
+      "kind": "product",
+      "source_entity_ids": [
+        "prod_hazard_basilisk"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "6a0e3e3d4ea7dbbb9d83e34342c615a733917685e7a8a9f395eacfef33089280"
+    },
+    {
+      "asset_id": "item-prod_trap_hairtrigger_acid",
+      "filename": "assets/item-prod_trap_hairtrigger_acid.svg",
+      "accessible_name": "8kg Quartz-Wire Vitriol Sprayer",
+      "viewBox": "0 0 160 160",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Stock/craft/result illustration64–96px; all names/prices/traits live outside SVG. Product description is not new mechanics proof.",
+      "kind": "product",
+      "source_entity_ids": [
+        "prod_trap_hairtrigger_acid"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "c90939bb3d2e29f8cd331d6f53d3a52c86ab4c51ea754215cd14b3d300d48381"
+    },
+    {
+      "asset_id": "icon-trade",
+      "filename": "assets/icon-trade.svg",
+      "accessible_name": "Trade",
+      "viewBox": "0 0 64 64",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Labelled UI icon24–32px;44–48px hit target belongs to builder, icon never replaces localised text.",
+      "kind": "functional_icon",
+      "source_entity_ids": [
+        "ui:trade"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "1fd3af731f4a414ea220f7976ab7a712032713a21afbd072626b9d9e23e9095e"
+    },
+    {
+      "asset_id": "icon-craft",
+      "filename": "assets/icon-craft.svg",
+      "accessible_name": "Craft",
+      "viewBox": "0 0 64 64",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Labelled UI icon24–32px;44–48px hit target belongs to builder, icon never replaces localised text.",
+      "kind": "functional_icon",
+      "source_entity_ids": [
+        "ui:craft"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "abbf1b19bf96c24a4fad809730483c331e975efb2b195a0248d72edbecb12c76"
+    },
+    {
+      "asset_id": "icon-alchemy",
+      "filename": "assets/icon-alchemy.svg",
+      "accessible_name": "Alchemy",
+      "viewBox": "0 0 64 64",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Labelled UI icon24–32px;44–48px hit target belongs to builder, icon never replaces localised text.",
+      "kind": "functional_icon",
+      "source_entity_ids": [
+        "ui:alchemy"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "e7a96d8f5c9ed0249ece356741e560beafc6ba45bac3b0aeb4dcf04c3f4faa56"
+    },
+    {
+      "asset_id": "icon-expedition",
+      "filename": "assets/icon-expedition.svg",
+      "accessible_name": "Expedition",
+      "viewBox": "0 0 64 64",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Labelled UI icon24–32px;44–48px hit target belongs to builder, icon never replaces localised text.",
+      "kind": "functional_icon",
+      "source_entity_ids": [
+        "ui:expedition"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "fe09c253a67c3762b9a25184d655efb8faadf3846f4c694f1f03e3bf34cd0d7c"
+    },
+    {
+      "asset_id": "icon-ledger",
+      "filename": "assets/icon-ledger.svg",
+      "accessible_name": "Ledger",
+      "viewBox": "0 0 64 64",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Labelled UI icon24–32px;44–48px hit target belongs to builder, icon never replaces localised text.",
+      "kind": "functional_icon",
+      "source_entity_ids": [
+        "ui:ledger"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "a1c753ac8b0976a06480ae5a4d0bc1cb3a91afb409e3d546753170cf8ea74a16"
+    },
+    {
+      "asset_id": "icon-coin",
+      "filename": "assets/icon-coin.svg",
+      "accessible_name": "Coin",
+      "viewBox": "0 0 64 64",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Labelled UI icon24–32px;44–48px hit target belongs to builder, icon never replaces localised text.",
+      "kind": "functional_icon",
+      "source_entity_ids": [
+        "ui:coin"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "e3721c3419afeec9ba826dda97eefe1285cb1115a175e85448c5b13955836d6e"
+    },
+    {
+      "asset_id": "icon-stock",
+      "filename": "assets/icon-stock.svg",
+      "accessible_name": "Stock",
+      "viewBox": "0 0 64 64",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Labelled UI icon24–32px;44–48px hit target belongs to builder, icon never replaces localised text.",
+      "kind": "functional_icon",
+      "source_entity_ids": [
+        "ui:stock"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "69996739193c143280e888d52a725e4d01d6174642250d3559efa88b71c26db3"
+    },
+    {
+      "asset_id": "icon-trust",
+      "filename": "assets/icon-trust.svg",
+      "accessible_name": "Trust",
+      "viewBox": "0 0 64 64",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Labelled UI icon24–32px;44–48px hit target belongs to builder, icon never replaces localised text.",
+      "kind": "functional_icon",
+      "source_entity_ids": [
+        "ui:trust"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "7456623383252116b65dd807190ba164558dbe48c32341be133d412ef6a68546"
+    },
+    {
+      "asset_id": "icon-health",
+      "filename": "assets/icon-health.svg",
+      "accessible_name": "Health",
+      "viewBox": "0 0 64 64",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Labelled UI icon24–32px;44–48px hit target belongs to builder, icon never replaces localised text.",
+      "kind": "functional_icon",
+      "source_entity_ids": [
+        "ui:health"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "a0cc4adf31c3c37a24dfc866c2c7bb0d252c82e10210b0f02e9fe589b717e21d"
+    },
+    {
+      "asset_id": "icon-mass",
+      "filename": "assets/icon-mass.svg",
+      "accessible_name": "Mass",
+      "viewBox": "0 0 64 64",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Labelled UI icon24–32px;44–48px hit target belongs to builder, icon never replaces localised text.",
+      "kind": "functional_icon",
+      "source_entity_ids": [
+        "ui:mass"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "49002f5e780cb2a499239d37cc214481032e7aee1410767e421697bba41d2bca"
+    },
+    {
+      "asset_id": "icon-reset",
+      "filename": "assets/icon-reset.svg",
+      "accessible_name": "Reset",
+      "viewBox": "0 0 64 64",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Labelled UI icon24–32px;44–48px hit target belongs to builder, icon never replaces localised text.",
+      "kind": "functional_icon",
+      "source_entity_ids": [
+        "ui:reset"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "219d1406f828737fcb3da01b710768beff0c98524bdfeef90e36a2d730751f0b"
+    },
+    {
+      "asset_id": "icon-warning",
+      "filename": "assets/icon-warning.svg",
+      "accessible_name": "Warning",
+      "viewBox": "0 0 64 64",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Labelled UI icon24–32px;44–48px hit target belongs to builder, icon never replaces localised text.",
+      "kind": "functional_icon",
+      "source_entity_ids": [
+        "ui:warning"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "f41bdf5ce4a2b240c654daa68ab13b637b9239b8112d3006e8ca57d299ea9929"
+    },
+    {
+      "asset_id": "icon-fact",
+      "filename": "assets/icon-fact.svg",
+      "accessible_name": "Fact",
+      "viewBox": "0 0 64 64",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Labelled UI icon24–32px;44–48px hit target belongs to builder, icon never replaces localised text.",
+      "kind": "functional_icon",
+      "source_entity_ids": [
+        "ui:fact"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "a50a758e04eac341ec36d9e38e187bdfe6eefec0e47c792a2b4f2340c1ea209b"
+    },
+    {
+      "asset_id": "icon-rumour",
+      "filename": "assets/icon-rumour.svg",
+      "accessible_name": "Rumour",
+      "viewBox": "0 0 64 64",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Labelled UI icon24–32px;44–48px hit target belongs to builder, icon never replaces localised text.",
+      "kind": "functional_icon",
+      "source_entity_ids": [
+        "ui:rumour"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "75ca1b97fb351cbb9efd5e450deef824b03ba9625e57c36fbd1f0a64d4ebebd3"
+    },
+    {
+      "asset_id": "icon-debt",
+      "filename": "assets/icon-debt.svg",
+      "accessible_name": "Debt",
+      "viewBox": "0 0 64 64",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Labelled UI icon24–32px;44–48px hit target belongs to builder, icon never replaces localised text.",
+      "kind": "functional_icon",
+      "source_entity_ids": [
+        "ui:debt"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "e86ec9cb482dc076781bae26b76fa2668b54a7f0e30e299f58908e48237c63c0"
+    },
+    {
+      "asset_id": "icon-intel",
+      "filename": "assets/icon-intel.svg",
+      "accessible_name": "Intel",
+      "viewBox": "0 0 64 64",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Labelled UI icon24–32px;44–48px hit target belongs to builder, icon never replaces localised text.",
+      "kind": "functional_icon",
+      "source_entity_ids": [
+        "ui:intel"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "bb43e009c969dae57ed2d1ebbb6177e18e1963918e55681850d8e7ce9581fae6"
+    },
+    {
+      "asset_id": "icon-clients",
+      "filename": "assets/icon-clients.svg",
+      "accessible_name": "Clients",
+      "viewBox": "0 0 64 64",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Labelled UI icon24–32px;44–48px hit target belongs to builder, icon never replaces localised text.",
+      "kind": "functional_icon",
+      "source_entity_ids": [
+        "ui:clients"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "39217410a96ea533353bcb28a8ae2cfac689d40064093b145da483da02d566e2"
+    },
+    {
+      "asset_id": "icon-skills",
+      "filename": "assets/icon-skills.svg",
+      "accessible_name": "Skills",
+      "viewBox": "0 0 64 64",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Labelled UI icon24–32px;44–48px hit target belongs to builder, icon never replaces localised text.",
+      "kind": "functional_icon",
+      "source_entity_ids": [
+        "ui:skills"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "83cc7a49625b6ec59f66a44cf0cc22caf659e79f981754599de54c363bcda258"
+    },
+    {
+      "asset_id": "icon-archive",
+      "filename": "assets/icon-archive.svg",
+      "accessible_name": "Archive",
+      "viewBox": "0 0 64 64",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Labelled UI icon24–32px;44–48px hit target belongs to builder, icon never replaces localised text.",
+      "kind": "functional_icon",
+      "source_entity_ids": [
+        "ui:archive"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "cebe604a3ef004a26f9b7b9cac1322ad552f80a50ef923535c249a6ad4a9bb76"
+    },
+    {
+      "asset_id": "icon-settings",
+      "filename": "assets/icon-settings.svg",
+      "accessible_name": "Settings",
+      "viewBox": "0 0 64 64",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Labelled UI icon24–32px;44–48px hit target belongs to builder, icon never replaces localised text.",
+      "kind": "functional_icon",
+      "source_entity_ids": [
+        "ui:settings"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "9a38944871c63b2990a1c6b7053179564010d09f652bd067c62f6f0317e3bfdf"
+    },
+    {
+      "asset_id": "icon-play",
+      "filename": "assets/icon-play.svg",
+      "accessible_name": "Play",
+      "viewBox": "0 0 64 64",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Labelled UI icon24–32px;44–48px hit target belongs to builder, icon never replaces localised text.",
+      "kind": "functional_icon",
+      "source_entity_ids": [
+        "ui:play"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "66daabde77aa4f8fa3ed36ee81134b34eeaf2262e8e222726d1f323984dec180"
+    },
+    {
+      "asset_id": "icon-pause",
+      "filename": "assets/icon-pause.svg",
+      "accessible_name": "Pause",
+      "viewBox": "0 0 64 64",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Labelled UI icon24–32px;44–48px hit target belongs to builder, icon never replaces localised text.",
+      "kind": "functional_icon",
+      "source_entity_ids": [
+        "ui:pause"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "28e41339f7a8289df1e3abc1f00f2ad00ee2915e2c583f738bf9ef65f6b87115"
+    },
+    {
+      "asset_id": "icon-close",
+      "filename": "assets/icon-close.svg",
+      "accessible_name": "Close",
+      "viewBox": "0 0 64 64",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Labelled UI icon24–32px;44–48px hit target belongs to builder, icon never replaces localised text.",
+      "kind": "functional_icon",
+      "source_entity_ids": [
+        "ui:close"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "cd3c07f053e158bb001d76aaa99cb07088239387d86726519ba5cf563deec756"
+    },
+    {
+      "asset_id": "icon-back",
+      "filename": "assets/icon-back.svg",
+      "accessible_name": "Back",
+      "viewBox": "0 0 64 64",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Labelled UI icon24–32px;44–48px hit target belongs to builder, icon never replaces localised text.",
+      "kind": "functional_icon",
+      "source_entity_ids": [
+        "ui:back"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "2087810c44cfcd546e339b1dc5c641550fa25d1391ce69abb0a511997a68d9a4"
+    },
+    {
+      "asset_id": "icon-confirm",
+      "filename": "assets/icon-confirm.svg",
+      "accessible_name": "Confirm",
+      "viewBox": "0 0 64 64",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Labelled UI icon24–32px;44–48px hit target belongs to builder, icon never replaces localised text.",
+      "kind": "functional_icon",
+      "source_entity_ids": [
+        "ui:confirm"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "1126d9a44b385b6e0f8b0ae313ae994661a029050ed0c5e6fb7776f30efd278e"
+    },
+    {
+      "asset_id": "icon-defer",
+      "filename": "assets/icon-defer.svg",
+      "accessible_name": "Defer",
+      "viewBox": "0 0 64 64",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Labelled UI icon24–32px;44–48px hit target belongs to builder, icon never replaces localised text.",
+      "kind": "functional_icon",
+      "source_entity_ids": [
+        "ui:defer"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "ad4e17f3a137aef2afad800e7493e5db8e37b539bcab4ae04b450171bc960cdb"
+    },
+    {
+      "asset_id": "icon-decline",
+      "filename": "assets/icon-decline.svg",
+      "accessible_name": "Decline",
+      "viewBox": "0 0 64 64",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Labelled UI icon24–32px;44–48px hit target belongs to builder, icon never replaces localised text.",
+      "kind": "functional_icon",
+      "source_entity_ids": [
+        "ui:decline"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "bb91d97568bde506aa228c39e8bda704886880bf9b9b2b730cf4a1ce4ffa6c78"
+    },
+    {
+      "asset_id": "icon-lock",
+      "filename": "assets/icon-lock.svg",
+      "accessible_name": "Lock",
+      "viewBox": "0 0 64 64",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Labelled UI icon24–32px;44–48px hit target belongs to builder, icon never replaces localised text.",
+      "kind": "functional_icon",
+      "source_entity_ids": [
+        "ui:lock"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "b202dd05d6cc9bf705ea165dcbd53d62109a69085dec8cda1f1966a7b0b4f97c"
+    },
+    {
+      "asset_id": "icon-save",
+      "filename": "assets/icon-save.svg",
+      "accessible_name": "Save",
+      "viewBox": "0 0 64 64",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Labelled UI icon24–32px;44–48px hit target belongs to builder, icon never replaces localised text.",
+      "kind": "functional_icon",
+      "source_entity_ids": [
+        "ui:save"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "b6945a5070f1d86543cead0ccf1f92a3e33274e78961df8dc226b5d7ced16628"
+    },
+    {
+      "asset_id": "icon-export",
+      "filename": "assets/icon-export.svg",
+      "accessible_name": "Export",
+      "viewBox": "0 0 64 64",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Labelled UI icon24–32px;44–48px hit target belongs to builder, icon never replaces localised text.",
+      "kind": "functional_icon",
+      "source_entity_ids": [
+        "ui:export"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "3c6632fccb8fe2f4fac2e8779b51048f3aa51a37f939687591a5dc06d5213ac2"
+    },
+    {
+      "asset_id": "icon-warranty",
+      "filename": "assets/icon-warranty.svg",
+      "accessible_name": "Warranty",
+      "viewBox": "0 0 64 64",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Labelled UI icon24–32px;44–48px hit target belongs to builder, icon never replaces localised text.",
+      "kind": "functional_icon",
+      "source_entity_ids": [
+        "ui:warranty"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "45312692866008d1982cd641a93d35fec7acd26ba6281a6637349d4f79e06981"
+    },
+    {
+      "asset_id": "icon-sulphur",
+      "filename": "assets/icon-sulphur.svg",
+      "accessible_name": "Sulphur",
+      "viewBox": "0 0 64 64",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Labelled UI icon24–32px;44–48px hit target belongs to builder, icon never replaces localised text.",
+      "kind": "functional_icon",
+      "source_entity_ids": [
+        "ui:sulphur"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "6c68aa06debb82a690f0d84cea6624022bf83b1b68fcbbddb18db45e90eacd43"
+    },
+    {
+      "asset_id": "icon-catalyst",
+      "filename": "assets/icon-catalyst.svg",
+      "accessible_name": "Catalyst",
+      "viewBox": "0 0 64 64",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Labelled UI icon24–32px;44–48px hit target belongs to builder, icon never replaces localised text.",
+      "kind": "functional_icon",
+      "source_entity_ids": [
+        "ui:catalyst"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "5c1a196cedc0b947ce505909eb7545bafde94e356bb8b4c808f649fc0b982808"
+    },
+    {
+      "asset_id": "icon-offline",
+      "filename": "assets/icon-offline.svg",
+      "accessible_name": "Offline",
+      "viewBox": "0 0 64 64",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Labelled UI icon24–32px;44–48px hit target belongs to builder, icon never replaces localised text.",
+      "kind": "functional_icon",
+      "source_entity_ids": [
+        "ui:offline"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "5a6cf434d839e6c62e6b3e5fd033648a730805ff34900d7da7455a17739e0009"
+    },
+    {
+      "asset_id": "category-reagent-base",
+      "filename": "assets/category-reagent-base.svg",
+      "accessible_name": "Reagent Base",
+      "viewBox": "0 0 64 64",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Reused category thumbnail32–48px, never bespoke material/module identity.",
+      "kind": "category_icon",
+      "source_entity_ids": [
+        "reagent-base"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "02dfa9d56b4bf80238e7c81322930b45d441a7cdb9047aeef1093422afcc4990"
+    },
+    {
+      "asset_id": "category-reagent-active",
+      "filename": "assets/category-reagent-active.svg",
+      "accessible_name": "Reagent Active",
+      "viewBox": "0 0 64 64",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Reused category thumbnail32–48px, never bespoke material/module identity.",
+      "kind": "category_icon",
+      "source_entity_ids": [
+        "reagent-active"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "ada553049b37a6a5bdf9cebc2d406612908d1bf22f156cf52f438b929cebb4dd"
+    },
+    {
+      "asset_id": "category-reagent-carrier",
+      "filename": "assets/category-reagent-carrier.svg",
+      "accessible_name": "Reagent Carrier",
+      "viewBox": "0 0 64 64",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Reused category thumbnail32–48px, never bespoke material/module identity.",
+      "kind": "category_icon",
+      "source_entity_ids": [
+        "reagent-carrier"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "f93a34b04071b76f4bc1fdcc9be398f72788469cbf41ac225a689ae597a88961"
+    },
+    {
+      "asset_id": "category-reagent-stabiliser",
+      "filename": "assets/category-reagent-stabiliser.svg",
+      "accessible_name": "Reagent Stabiliser",
+      "viewBox": "0 0 64 64",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Reused category thumbnail32–48px, never bespoke material/module identity.",
+      "kind": "category_icon",
+      "source_entity_ids": [
+        "reagent-stabiliser"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "8f54ad82247fd2ad7c5d55bc43fd83faf3ab290602499a4dadedf5d4412fcf26"
+    },
+    {
+      "asset_id": "category-reagent-catalyst",
+      "filename": "assets/category-reagent-catalyst.svg",
+      "accessible_name": "Reagent Catalyst",
+      "viewBox": "0 0 64 64",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Reused category thumbnail32–48px, never bespoke material/module identity.",
+      "kind": "category_icon",
+      "source_entity_ids": [
+        "reagent-catalyst"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "9e104da5da16bf3a875f98740cd4953989036ad8fbe3250a28fcf2cc1d5a2133"
+    },
+    {
+      "asset_id": "category-module-trigger",
+      "filename": "assets/category-module-trigger.svg",
+      "accessible_name": "Module Trigger",
+      "viewBox": "0 0 64 64",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Reused category thumbnail32–48px, never bespoke material/module identity.",
+      "kind": "category_icon",
+      "source_entity_ids": [
+        "module-trigger"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "aeb07a17ea0bd182c08ac655e23d1139b3f5edc422320cecaad40adfb7b5aa12"
+    },
+    {
+      "asset_id": "category-module-concealment",
+      "filename": "assets/category-module-concealment.svg",
+      "accessible_name": "Module Concealment",
+      "viewBox": "0 0 64 64",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Reused category thumbnail32–48px, never bespoke material/module identity.",
+      "kind": "category_icon",
+      "source_entity_ids": [
+        "module-concealment"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "52ce98b8539a576389c743c32128850e09c360d5c14e0b371d8d4b3331fac9e9"
+    },
+    {
+      "asset_id": "category-module-delivery",
+      "filename": "assets/category-module-delivery.svg",
+      "accessible_name": "Module Delivery",
+      "viewBox": "0 0 64 64",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Reused category thumbnail32–48px, never bespoke material/module identity.",
+      "kind": "category_icon",
+      "source_entity_ids": [
+        "module-delivery"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "f09afdabfec6c22c763a5be30cdc89a3fcd4953c9281960c6f2bb7f506d65d0e"
+    },
+    {
+      "asset_id": "category-module-payload",
+      "filename": "assets/category-module-payload.svg",
+      "accessible_name": "Module Payload",
+      "viewBox": "0 0 64 64",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Reused category thumbnail32–48px, never bespoke material/module identity.",
+      "kind": "category_icon",
+      "source_entity_ids": [
+        "module-payload"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "35eac2692275baa09eb0196f12d16f00c8edad44fa5d7e3d2d97c9f6da853b38"
+    },
+    {
+      "asset_id": "category-module-power",
+      "filename": "assets/category-module-power.svg",
+      "accessible_name": "Module Power",
+      "viewBox": "0 0 64 64",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Reused category thumbnail32–48px, never bespoke material/module identity.",
+      "kind": "category_icon",
+      "source_entity_ids": [
+        "module-power"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "4471bd1e015f0c7ea1444e1f59912fe48f6db15a4db9b1a5ff3b366cd5b8cd76"
+    },
+    {
+      "asset_id": "category-module-reset",
+      "filename": "assets/category-module-reset.svg",
+      "accessible_name": "Module Reset",
+      "viewBox": "0 0 64 64",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Reused category thumbnail32–48px, never bespoke material/module identity.",
+      "kind": "category_icon",
+      "source_entity_ids": [
+        "module-reset"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "9ddbee546852751e06a5699f20868ec15b743b0bc4304c9b14833911c50d987b"
+    },
+    {
+      "asset_id": "scene-shop",
+      "filename": "assets/scene-shop.svg",
+      "accessible_name": "Your shop counter",
+      "viewBox": "0 0 640 360",
+      "intrinsic_dimensions": null,
+      "intended_usage": "Illustrated hub320×180; layer live client tokens/actions outside image, no baked transaction state.",
+      "kind": "hub",
+      "source_entity_ids": [
+        "protagonist:unnamed-merchant",
+        "DAY_DESK"
+      ],
+      "status": "created_original_production_first_pass",
+      "finish": "provisional art direction / not independently accepted",
+      "licence": "original project artwork",
+      "external_dependencies": [],
+      "transparent_background": true,
+      "notes": "Original flat vector; initial production pass, human taste review pending.",
+      "sha256": "aa3272be03bc533a0094efab22c1d4180727da30ac78f4444d552fb570d5ed70"
+    }
+  ]
+}

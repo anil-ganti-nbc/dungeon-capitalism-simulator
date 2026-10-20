@@ -1,3 +1,4 @@
+import { AssetToken, PartyPortraits } from './Artwork';
 import React, { useState } from 'react';
 import {
   MarketFactOrRumour,
@@ -85,7 +86,7 @@ export const IntelAndStoryPanel: React.FC<IntelPanelProps> = ({
                     : `UNCONFIRMED RUMOUR (${item.reliabilityPct}% CONFIDENCE)`}
                 </span>
               </div>
-              <h3 className="text-sm font-semibold text-slate-100">{item.headline}</h3>
+              <AssetToken id={item.isVerifiedFact?'icon-fact':'icon-rumour'} label={item.isVerifiedFact?'Shared verified-fact symbol':'Shared rumour symbol'}/><h3 className="text-sm font-semibold text-slate-100">{item.headline}</h3>
               <p className="text-xs text-slate-300 leading-relaxed">{item.detail}</p>
               <div className="text-[11px] font-mono text-slate-500 pt-1">
                 Source Provenance: {item.source}
@@ -274,7 +275,7 @@ export const ClientDirectoryPanel: React.FC<ClientDirectoryProps> = ({ masters, 
             {filteredMasters.map((m) => (
               <div key={m.id} className="p-3.5 bg-[#0B0E14] border border-slate-800 rounded-lg text-xs space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <span className="font-semibold text-slate-100 text-sm">{m.name}</span>
+                  <AssetToken id={m.id} label={m.name} size={80}/><span className="font-semibold text-slate-100 text-sm">{m.name}</span>
                   <span className="font-mono text-amber-400 tabular-nums">
                     {m.region.toUpperCase()} · Budget {m.budget}g · Trust {m.trust}
                   </span>
@@ -301,7 +302,7 @@ export const ClientDirectoryPanel: React.FC<ClientDirectoryProps> = ({ masters, 
             {filteredParties.map((p) => (
               <div key={p.id} className="p-3.5 bg-[#0B0E14] border border-slate-800 rounded-lg text-xs space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <span className="font-semibold text-slate-100 text-sm">{p.name}</span>
+                  <AssetToken id={p.id} label={p.name} size={128}/><span className="font-semibold text-slate-100 text-sm">{p.name}</span>
                   <span className="font-mono text-amber-400 tabular-nums">
                     {p.region.toUpperCase()} · Gold {p.budget}g · Trust {p.trust}
                   </span>
@@ -310,7 +311,7 @@ export const ClientDirectoryPanel: React.FC<ClientDirectoryProps> = ({ masters, 
                   Ethics: {p.ethics} · Caution: {p.caution}/100 · "{p.motto}"
                 </div>
                 <div className="font-mono text-sky-300 tabular-nums">
-                  Roster: {p.members.map((mem) => `${mem.name} (${mem.role}, ${mem.massKg}kg)`).join(' · ')}
+                  Roster: {p.members.map((mem) => `${mem.name} (${mem.role}, ${mem.massKg}kg)`).join(' · ')}<PartyPortraits party={p}/>
                 </div>
                 <div className="text-amber-300 font-mono">Seeking: {p.desiredCounter}</div>
                 <div className="text-slate-400 italic">
@@ -381,7 +382,7 @@ export const SpecialisationsPanel: React.FC<SpecialisationsProps> = ({
                       <span>TIER {sk.tier}</span>
                       <span>{sk.unlocked ? 'ACTIVE' : `${sk.costPoints} SP`}</span>
                     </div>
-                    <div className="font-semibold text-slate-100 mb-1">{sk.name}</div>
+                    <AssetToken id={sk.id} label={sk.name}/><div className="font-semibold text-slate-100 mb-1">{sk.name}</div>
                     <p className="text-slate-400 leading-relaxed">{SKILL_TREE_NODES.find(node => node.id === sk.id)?.description ?? sk.description}</p>
                   </div>
                   {!sk.unlocked && (

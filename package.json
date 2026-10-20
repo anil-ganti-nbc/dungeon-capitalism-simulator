@@ -9,7 +9,12 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test": "tsx --test scripts/foundation.test.ts scripts/remediation.test.ts scripts/content-audit.test.ts scripts/installation-replacement.test.ts scripts/encounter-renewal.test.ts scripts/encounter-renewal-adversarial.test.ts scripts/renewal-catalogue-transition.test.ts scripts/renewal-paid-provenance.test.ts",
+    "test": "tsx --test scripts/foundation.test.ts scripts/remediation.test.ts scripts/content-audit.test.ts scripts/installation-replacement.test.ts scripts/encounter-renewal.test.ts scripts/encounter-renewal-adversarial.test.ts scripts/renewal-catalogue-transition.test.ts scripts/renewal-paid-provenance.test.ts scripts/forecast-uncertainty.test.ts scripts/game-presentation.test.ts scripts/android-packaging-probe.test.ts",
+    "test:presentation": "tsx scripts/game-presentation-browser.ts",
+    "test:android-packaging": "tsx --test scripts/android-packaging-probe.test.ts",
+    "android:sync": "cap sync android",
+    "android:debug": "node scripts/android-local-build.mjs",
+    "test:forecast": "tsx scripts/forecast-browser.ts",
     "test:encounter-renewal": "tsx scripts/encounter-renewal-browser.ts",
     "compare:encounter-renewal": "tsx scripts/compare-encounter-renewal.ts",
     "test:browser": "tsx scripts/replay_parity.ts && tsx scripts/browser_foundation.ts && tsx scripts/raid-parity-browser.ts && tsx scripts/remediation-browser.ts",
@@ -20,6 +25,10 @@
     "diagnose:renewal": "tsx scripts/diagnose-renewal.ts"
   },
   "dependencies": {
+    "@capacitor/android": "8.5.3",
+    "@capacitor/app": "8.1.2",
+    "@capacitor/core": "8.5.3",
+    "@capacitor/preferences": "8.0.1",
     "@google/genai": "^2.4.0",
     "@tailwindcss/vite": "^4.3.3",
     "@vitejs/plugin-react": "^6.1.1",
@@ -33,6 +42,7 @@
     "workbox-window": "^7.4.1"
   },
   "devDependencies": {
+    "@capacitor/cli": "8.5.3",
     "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
     "@types/react": "^19.3.0",
